@@ -35,13 +35,25 @@ export function onAuthStateChange(callback) {
 }
 
 export async function getProfile(userId) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("profiles")
-    .select("id, club_id, name, role")
+    .select("id, club_id, email, name, role, active")
     .eq("id", userId)
     .single();
+  if (error?.message?.includes("column") && (error.message.includes("active") || error.message.includes("email"))) {
+    const fallback = await supabase
+      .from("profiles")
+      .select("id, club_id, name, role")
+      .eq("id", userId)
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) {
     throw new Error(`로그인은 되었지만 사용자 프로필을 찾지 못했습니다. Supabase profiles 설정을 확인하세요. (${error.message})`);
+  }
+  if (data.active === false) {
+    throw new Error("비활성화된 계정입니다. 관리자에게 문의하세요.");
   }
   return data;
 }
@@ -166,6 +178,52 @@ export async function deleteMemberBudget(profile, name) {
     .eq("club_id", profile.club_id)
     .eq("member_name", name);
   if (error) throw error;
+}
+
+export async function fetchAdminMembers() {
+  return requestAdminMembers("GET");
+}
+
+export async function saveAdminMember(member) {
+  return requestAdminMembers(member.id ? "PATCH" : "POST", member);
+}
+
+export async function bulkSaveAdminMembers(members) {
+  return requestAdminMembers("POST", { action: "bulkUpsert", members });
+}
+
+export async function removeAdminMember({ id, mode = "deactivate", force = false }) {
+  return requestAdminMembers("DELETE", { id, mode, force });
+}
+
+async function requestAdminMembers(method, body) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error("로그인이 필요합니다.");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let response;
+  try {
+    response = await fetch("/api/admin-members", {
+      method,
+      headers: {
+        "authorization": `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: method === "GET" ? undefined : JSON.stringify(body || {}),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("회원 관리 API 응답이 지연되고 있습니다. Vercel 배포 환경에서 다시 확인하세요.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "회원 관리 API 호출에 실패했습니다.");
+  return result;
 }
 
 async function attachSignedFileUrls(files) {

@@ -1,10 +1,14 @@
 import {
+  bulkSaveAdminMembers,
   createMemberAiExpense,
   deleteMemberBudget as deleteRemoteMemberBudget,
+  fetchAdminMembers,
   fetchClubState,
   getCurrentSession,
   hasSupabaseConfig,
   onAuthStateChange,
+  removeAdminMember,
+  saveAdminMember,
   saveMemberBudget as saveRemoteMemberBudget,
   signInWithPassword,
   signOut,
@@ -321,6 +325,9 @@ let draftMemberAttachments = emptyMemberAttachments();
 let selectedEvidenceEntryId = "";
 let authState = { session: null, user: null, profile: null };
 let isRemoteMode = false;
+let adminMembers = [];
+let pendingMemberCsvRows = [];
+let memberAdminMessage = "";
 
 const els = {};
 
@@ -351,6 +358,15 @@ function bindElements() {
   els.memberBudgetForm = document.querySelector("#memberBudgetForm");
   els.memberBudgetRows = document.querySelector("#memberBudgetRows");
   els.memberBudgetSummary = document.querySelector("#memberBudgetSummary");
+  els.adminMemberForm = document.querySelector("#adminMemberForm");
+  els.adminMemberRows = document.querySelector("#adminMemberRows");
+  els.adminMemberSubmitButton = document.querySelector("#adminMemberSubmitButton");
+  els.memberCsvInput = document.querySelector("#memberCsvInput");
+  els.memberCsvStatus = document.querySelector("#memberCsvStatus");
+  els.memberCsvPreviewWrap = document.querySelector("#memberCsvPreviewWrap");
+  els.memberCsvPreviewRows = document.querySelector("#memberCsvPreviewRows");
+  els.memberBulkResult = document.querySelector("#memberBulkResult");
+  els.uploadMemberCsvButton = document.querySelector("#uploadMemberCsvButton");
   els.memberBudgetHint = document.querySelector("#memberBudgetHint");
   els.myBudgetSummary = document.querySelector("#myBudgetSummary");
   els.myExpenseRows = document.querySelector("#myExpenseRows");
@@ -413,6 +429,12 @@ function bindEvents() {
   document.querySelector("#clearMemberFormButton").addEventListener("click", resetMemberForm);
   els.memberBudgetForm.addEventListener("submit", handleMemberBudgetSubmit);
   document.querySelector("#clearMemberBudgetButton").addEventListener("click", resetMemberBudgetForm);
+  els.adminMemberForm.addEventListener("submit", handleAdminMemberSubmit);
+  document.querySelector("#clearAdminMemberButton").addEventListener("click", resetAdminMemberForm);
+  document.querySelector("#refreshMembersButton").addEventListener("click", refreshAdminMembers);
+  document.querySelector("#downloadMemberCsvButton").addEventListener("click", downloadMemberCsvTemplate);
+  els.memberCsvInput.addEventListener("change", handleMemberCsvChange);
+  els.uploadMemberCsvButton.addEventListener("click", uploadMemberCsv);
   document.querySelectorAll("[data-member-attachment-key]").forEach((input) => {
     input.addEventListener("change", handleMemberAttachmentChange);
   });
@@ -590,6 +612,7 @@ function renderAll() {
   renderPptxCopyText();
   renderPrintDocument();
   renderMyStatus();
+  renderMemberAdmin();
 }
 
 function syncMemberIdentityFields() {
@@ -731,6 +754,10 @@ function activateTab(tabName) {
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `${tabName}Panel`);
   });
+
+  if (tabName === "memberAdmin" && isRemoteMode && authState.profile?.role === "admin" && !adminMembers.length) {
+    refreshAdminMembers();
+  }
 }
 
 function getProjectBudget(key) {
@@ -1166,6 +1193,399 @@ window.deleteMemberBudget = async function deleteMemberBudget(name) {
   resetMemberBudgetForm();
   renderAll();
 };
+
+function renderMemberAdmin() {
+  if (!els.adminMemberRows) return;
+
+  if (!hasSupabaseConfig) {
+    els.adminMemberRows.innerHTML = `<tr><td colspan="8" class="muted">Supabase 연결 후 사용할 수 있습니다.</td></tr>`;
+    return;
+  }
+
+  if (memberAdminMessage) {
+    els.memberBulkResult.innerHTML = `<div class="empty-state">${escapeHtml(memberAdminMessage)}</div>`;
+  }
+
+  if (!adminMembers.length) {
+    els.adminMemberRows.innerHTML = `<tr><td colspan="8" class="muted">회원 관리 탭을 열면 목록을 불러옵니다.</td></tr>`;
+    return;
+  }
+
+  els.adminMemberRows.innerHTML = adminMembers.map((member) => {
+    const isCurrentUser = member.id === authState.user?.id;
+    const status = member.active
+      ? `<span class="status-pill ok">활성</span>`
+      : `<span class="status-pill warn">비활성</span>`;
+    const deleteButton = member.canHardDelete
+      ? `<button type="button" class="small-button" onclick="hardDeleteAdminMember('${escapeJsArg(member.id)}', false)">완전 삭제</button>`
+      : `<button type="button" class="small-button" onclick="hardDeleteAdminMember('${escapeJsArg(member.id)}', true)">강제 삭제</button>`;
+    return `
+      <tr>
+        <td><strong>${escapeHtml(member.name || "-")}</strong></td>
+        <td>${escapeHtml(member.email || "-")}</td>
+        <td>${member.role === "admin" ? "관리자" : "회원"}</td>
+        <td>${status}</td>
+        <td class="num">${formatWon(member.aiLimit)}</td>
+        <td class="num">${formatWon(member.used)}</td>
+        <td>${escapeHtml(member.notes || "")}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" class="small-button" onclick="editAdminMember('${escapeJsArg(member.id)}')">수정</button>
+            ${isCurrentUser ? "" : `<button type="button" class="small-button" onclick="toggleAdminMemberActive('${escapeJsArg(member.id)}')">${member.active ? "비활성화" : "활성화"}</button>`}
+            ${isCurrentUser ? "" : deleteButton}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function refreshAdminMembers() {
+  if (!isRemoteMode || authState.profile?.role !== "admin") return;
+
+  try {
+    memberAdminMessage = "회원 목록을 불러오는 중입니다.";
+    renderMemberAdmin();
+    const result = await fetchAdminMembers();
+    adminMembers = normalizeAdminMembers(result.members || []);
+    memberAdminMessage = "";
+    renderMemberAdmin();
+  } catch (error) {
+    console.error(error);
+    memberAdminMessage = `회원 목록을 불러오지 못했습니다. ${error.message || ""}`;
+    renderMemberAdmin();
+  }
+}
+
+async function handleAdminMemberSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const member = {
+    id: String(formData.get("id") || "").trim(),
+    name: String(formData.get("name") || "").trim(),
+    email: String(formData.get("email") || "").trim(),
+    role: formData.get("role") || "member",
+    aiLimit: toNumber(formData.get("aiLimit")),
+    password: String(formData.get("password") || "").trim(),
+    notes: String(formData.get("notes") || "").trim(),
+    active: formData.get("active") !== "false"
+  };
+
+  if (!member.name || !member.email) {
+    alert("이름과 이메일을 입력하세요.");
+    return;
+  }
+  if (!member.id && !member.password) {
+    alert("신규 회원은 임시 비밀번호가 필요합니다.");
+    return;
+  }
+  if (!canApplyMemberLimits([member], member.id ? [member.id] : [])) return;
+
+  try {
+    els.adminMemberSubmitButton.disabled = true;
+    await saveAdminMember(member);
+    await loadRemoteState();
+    await refreshAdminMembers();
+    resetAdminMemberForm();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "회원 저장에 실패했습니다.");
+  } finally {
+    els.adminMemberSubmitButton.disabled = false;
+  }
+}
+
+function resetAdminMemberForm() {
+  els.adminMemberForm.reset();
+  els.adminMemberForm.elements.id.value = "";
+  els.adminMemberForm.elements.role.value = "member";
+  els.adminMemberForm.elements.active.value = "true";
+  els.adminMemberForm.elements.aiLimit.value = "0";
+  els.adminMemberSubmitButton.textContent = "회원 저장";
+}
+
+window.editAdminMember = function editAdminMember(id) {
+  const member = adminMembers.find((item) => item.id === id);
+  if (!member) return;
+
+  els.adminMemberForm.elements.id.value = member.id;
+  els.adminMemberForm.elements.name.value = member.name || "";
+  els.adminMemberForm.elements.email.value = member.email || "";
+  els.adminMemberForm.elements.role.value = member.role || "member";
+  els.adminMemberForm.elements.aiLimit.value = member.aiLimit || 0;
+  els.adminMemberForm.elements.password.value = "";
+  els.adminMemberForm.elements.notes.value = member.notes || "";
+  els.adminMemberForm.elements.active.value = member.active ? "true" : "false";
+  els.adminMemberSubmitButton.textContent = "회원 수정";
+  els.adminMemberForm.elements.name.focus();
+};
+
+window.toggleAdminMemberActive = async function toggleAdminMemberActive(id) {
+  const member = adminMembers.find((item) => item.id === id);
+  if (!member) return;
+  const nextActive = !member.active;
+  const ok = confirm(`${member.name} 선생님을 ${nextActive ? "활성화" : "비활성화"}할까요?`);
+  if (!ok) return;
+
+  try {
+    await saveAdminMember({ ...member, active: nextActive, password: "" });
+    await refreshAdminMembers();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "상태 변경에 실패했습니다.");
+  }
+};
+
+window.hardDeleteAdminMember = async function hardDeleteAdminMember(id, force) {
+  const member = adminMembers.find((item) => item.id === id);
+  if (!member) return;
+  const message = force
+    ? `${member.name} 선생님은 지출 기록이 있습니다. 강제 삭제하면 제출 내역과 영수증 파일도 삭제됩니다. 정말 삭제할까요?`
+    : `${member.name} 선생님 계정을 완전 삭제할까요?`;
+  const ok = confirm(message);
+  if (!ok) return;
+  if (force) {
+    const secondOk = confirm("되돌릴 수 없습니다. 강제 삭제를 계속할까요?");
+    if (!secondOk) return;
+  }
+
+  try {
+    await removeAdminMember({ id, mode: "hard", force });
+    await loadRemoteState();
+    await refreshAdminMembers();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "회원 삭제에 실패했습니다.");
+  }
+};
+
+function handleMemberCsvChange(event) {
+  const file = event.target.files?.[0];
+  pendingMemberCsvRows = [];
+  els.uploadMemberCsvButton.disabled = true;
+  els.memberCsvPreviewWrap.hidden = true;
+  els.memberCsvPreviewRows.innerHTML = "";
+  els.memberCsvStatus.textContent = "CSV를 읽는 중입니다.";
+
+  if (!file) {
+    els.memberCsvStatus.textContent = "선택된 CSV가 없습니다.";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      pendingMemberCsvRows = parseMemberCsv(String(reader.result || ""));
+      renderMemberCsvPreview();
+    } catch (error) {
+      console.error(error);
+      els.memberCsvStatus.textContent = error.message || "CSV를 읽지 못했습니다.";
+    }
+  };
+  reader.onerror = () => {
+    els.memberCsvStatus.textContent = "CSV 파일을 읽지 못했습니다.";
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+function renderMemberCsvPreview() {
+  if (!pendingMemberCsvRows.length) {
+    els.memberCsvStatus.textContent = "업로드할 행이 없습니다.";
+    return;
+  }
+
+  els.memberCsvStatus.textContent = `${pendingMemberCsvRows.length}명 미리보기`;
+  els.uploadMemberCsvButton.disabled = false;
+  els.memberCsvPreviewWrap.hidden = false;
+  els.memberCsvPreviewRows.innerHTML = pendingMemberCsvRows.slice(0, 20).map((row) => `
+    <tr>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${escapeHtml(row.email)}</td>
+      <td>${row.role === "admin" ? "관리자" : "회원"}</td>
+      <td class="num">${formatWon(row.aiLimit)}</td>
+      <td>${row.password ? "입력됨" : `<span class="warning-pill">없음</span>`}</td>
+      <td>${escapeHtml(row.notes || "")}</td>
+    </tr>
+  `).join("");
+}
+
+async function uploadMemberCsv() {
+  if (!pendingMemberCsvRows.length) return;
+  if (!canApplyMemberLimits(pendingMemberCsvRows, [])) return;
+
+  const ok = confirm(`${pendingMemberCsvRows.length}명의 회원 정보를 일괄 저장할까요? 같은 이메일이 있으면 수정됩니다.`);
+  if (!ok) return;
+
+  try {
+    els.uploadMemberCsvButton.disabled = true;
+    memberAdminMessage = "CSV 일괄 저장 중입니다.";
+    renderMemberAdmin();
+    const result = await bulkSaveAdminMembers(pendingMemberCsvRows);
+    adminMembers = normalizeAdminMembers(result.members || []);
+    const successCount = (result.results || []).filter((row) => row.ok).length;
+    const failRows = (result.results || []).filter((row) => !row.ok);
+    memberAdminMessage = `일괄 저장 완료: 성공 ${successCount}명, 실패 ${failRows.length}명`;
+    els.memberBulkResult.innerHTML = failRows.length
+      ? failRows.map((row) => `<div class="warning-item"><strong>${escapeHtml(row.email || row.name || "행")}</strong><span>${escapeHtml(row.error)}</span></div>`).join("")
+      : `<div class="empty-state">${escapeHtml(memberAdminMessage)}</div>`;
+    pendingMemberCsvRows = [];
+    els.memberCsvInput.value = "";
+    els.memberCsvStatus.textContent = "선택된 CSV가 없습니다.";
+    els.memberCsvPreviewWrap.hidden = true;
+    await loadRemoteState();
+    renderAll();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "CSV 일괄 저장에 실패했습니다.");
+  } finally {
+    els.uploadMemberCsvButton.disabled = !pendingMemberCsvRows.length;
+  }
+}
+
+function downloadMemberCsvTemplate() {
+  const csv = [
+    "name,email,role,aiLimit,password,notes",
+    "홍길동,user02@example.com,member,100000,123456,ChatGPT Plus",
+    "관리자,admin2@example.com,admin,0,123456,보조 관리자"
+  ].join("\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "member-upload-template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseMemberCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header) => normalizeCsvHeader(header));
+  return rows.slice(1)
+    .filter((row) => row.some((cell) => String(cell || "").trim()))
+    .map((row) => {
+      const record = {};
+      headers.forEach((header, index) => {
+        record[header] = String(row[index] || "").trim();
+      });
+      return {
+        name: record.name,
+        email: record.email,
+        role: record.role || "member",
+        aiLimit: toNumber(record.aiLimit),
+        password: record.password,
+        notes: record.notes,
+        active: record.active === "" ? true : record.active !== "false"
+      };
+    });
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function normalizeCsvHeader(header) {
+  const key = String(header || "").trim().replace(/^\ufeff/, "").toLowerCase();
+  const map = {
+    "이름": "name",
+    "성명": "name",
+    "name": "name",
+    "이메일": "email",
+    "email": "email",
+    "역할": "role",
+    "role": "role",
+    "ai구독료한도": "aiLimit",
+    "ai 구독료 한도": "aiLimit",
+    "ai_limit": "aiLimit",
+    "ailimit": "aiLimit",
+    "limit": "aiLimit",
+    "임시비밀번호": "password",
+    "비밀번호": "password",
+    "password": "password",
+    "비고": "notes",
+    "메모": "notes",
+    "notes": "notes",
+    "상태": "active",
+    "active": "active"
+  };
+  return map[key] || key;
+}
+
+function normalizeAdminMembers(members) {
+  return (members || []).map((member) => ({
+    id: member.id,
+    email: member.email || "",
+    name: member.name || "",
+    role: member.role || "member",
+    active: member.active !== false,
+    aiLimit: toNumber(member.aiLimit),
+    notes: member.notes || "",
+    used: toNumber(member.used),
+    canHardDelete: Boolean(member.canHardDelete)
+  }));
+}
+
+function canApplyMemberLimits(nextMembers, replaceIds = []) {
+  const replaceIdSet = new Set(replaceIds.filter(Boolean));
+  const merged = adminMembers
+    .filter((member) => !replaceIdSet.has(member.id))
+    .map((member) => ({ ...member }));
+
+  nextMembers.forEach((member) => {
+    const email = String(member.email || "").toLowerCase();
+    const existingIndex = merged.findIndex((item) => {
+      if (member.id && item.id === member.id) return true;
+      return item.email.toLowerCase() === email;
+    });
+    const mergedMember = {
+      ...(existingIndex >= 0 ? merged[existingIndex] : {}),
+      ...member,
+      id: member.id || (existingIndex >= 0 ? merged[existingIndex].id : ""),
+      email,
+      aiLimit: toNumber(member.aiLimit)
+    };
+    if (existingIndex >= 0) merged.splice(existingIndex, 1, mergedMember);
+    else merged.push(mergedMember);
+  });
+
+  const totalLimit = merged
+    .reduce((sum, member) => sum + toNumber(member.aiLimit), 0);
+  const aiBudget = getProjectBudget("aiSubscriptionBudget");
+  if (totalLimit > aiBudget) {
+    alert(`회원별 AI 구독료 한도 합계 ${formatWon(totalLimit)}이 AI 구독료 배정액 ${formatWon(aiBudget)}을 초과합니다.`);
+    return false;
+  }
+  return true;
+}
 
 function renderMemberBudgetManager() {
   const summary = getAiSubscriptionSummary();

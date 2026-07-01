@@ -40,6 +40,15 @@ VITE_SUPABASE_ANON_KEY=
 - service_role key
 - database password
 
+Vercel Functions로 회원 계정 생성/삭제를 쓰려면 Vercel 프로젝트 환경변수에 아래 서버 전용 값도 추가한다.
+
+```text
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+```
+
+`SUPABASE_SERVICE_ROLE_KEY`는 GitHub, 프론트 코드, `app/.env`에 넣지 않는다.
+
 ## 4. Storage
 
 `schema.sql`은 private bucket `receipts`를 생성하고 RLS 정책을 설정한다.
@@ -49,3 +58,14 @@ VITE_SUPABASE_ANON_KEY=
 ```text
 {club_id}/{user_id}/{expense_id}/{file_type}-{filename}
 ```
+
+## 5. 회원 관리 기능 추가 적용
+
+기존 DB에 회원 관리 C안 기능을 적용할 때는 `supabase/member_management_migration.sql`을 Supabase SQL Editor에서 한 번 실행한다.
+
+이 SQL은 다음을 처리한다.
+
+- `profiles.email`, `profiles.active`, `profiles.disabled_at` 추가
+- 기존 Auth 이메일을 `profiles.email`에 채움
+- 기존 AI 구독료 한도를 `user_id`와 연결
+- 비활성 회원이 동아리 데이터에 접근하지 못하도록 helper function 갱신

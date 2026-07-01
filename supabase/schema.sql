@@ -14,11 +14,19 @@ create table if not exists public.clubs (
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   club_id uuid references public.clubs(id) on delete set null,
+  email text not null default '',
   name text not null default '',
   role text not null default 'member' check (role in ('admin', 'member')),
+  active boolean not null default true,
+  disabled_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists email text not null default '',
+  add column if not exists active boolean not null default true,
+  add column if not exists disabled_at timestamptz;
 
 create table if not exists public.project_settings (
   club_id uuid primary key references public.clubs(id) on delete cascade,
@@ -93,10 +101,15 @@ create table if not exists public.expense_files (
 );
 
 create index if not exists profiles_club_id_idx on public.profiles(club_id);
+create index if not exists profiles_email_idx on public.profiles(email);
 create index if not exists expenses_club_id_idx on public.expenses(club_id);
 create index if not exists expenses_user_id_idx on public.expenses(user_id);
 create index if not exists expense_files_expense_id_idx on public.expense_files(expense_id);
 create index if not exists ai_member_budgets_club_id_idx on public.ai_member_budgets(club_id);
+
+create unique index if not exists ai_member_budgets_club_user_idx
+on public.ai_member_budgets(club_id, user_id)
+where user_id is not null;
 
 create or replace function public.is_admin_for_club(target_club_id uuid)
 returns boolean
@@ -111,6 +124,7 @@ as $$
     where p.id = auth.uid()
       and p.club_id = target_club_id
       and p.role = 'admin'
+      and p.active = true
   );
 $$;
 
@@ -126,6 +140,7 @@ as $$
     from public.profiles p
     where p.id = auth.uid()
       and p.club_id = target_club_id
+      and p.active = true
   );
 $$;
 

@@ -473,7 +473,8 @@ tfoot .balance-row td {
 
 .project-grid,
 .form-grid,
-.member-budget-form {
+.member-budget-form,
+.member-admin-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: 12px;
@@ -521,8 +522,21 @@ button:focus-visible {
   gap: 16px;
 }
 
-.member-budget-actions {
+.member-budget-actions,
+.member-admin-actions {
   align-self: end;
+}
+
+.csv-upload-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.member-admin-table td:last-child {
+  min-width: 220px;
 }
 
 .budget-hint {
