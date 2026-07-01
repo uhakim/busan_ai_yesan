@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>2026 AI 디지털 교사 동아리 정산 도우미</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Local prototype</p>
+        <h1>2026 AI 디지털 교사 동아리 정산 도우미</h1>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="ghost-button" id="saveLocalButton">로컬 저장</button>
+        <button type="button" class="ghost-button" id="exportButton">JSON 내보내기</button>
+        <label class="ghost-button file-button">
+          JSON 가져오기
+          <input type="file" id="importInput" accept="application/json,.json">
+        </label>
+        <button type="button" class="primary-button" id="printButton">인쇄/PDF</button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <nav class="tabs" aria-label="주요 화면">
+        <button type="button" class="tab-button active" data-tab="dashboard">대시보드</button>
+        <button type="button" class="tab-button" data-tab="entry">지출 입력</button>
+        <button type="button" class="tab-button" data-tab="review">검토</button>
+        <button type="button" class="tab-button" data-tab="print">최종 출력</button>
+      </nav>
+
+      <section class="tab-panel active" id="dashboardPanel">
+        <section class="summary-grid" id="summaryGrid" aria-label="예산 요약"></section>
+
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>항목별 예산 현황</h2>
+              <p>총 예산 2,000,000원 기준으로 사용액, 잔액, 사용률을 자동 계산합니다.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>항목</th>
+                  <th class="num">한도</th>
+                  <th class="num">사용액</th>
+                  <th class="num">잔액</th>
+                  <th>사용률</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody id="budgetRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>점검 경고</h2>
+              <p>한도 초과, 결제방법별 필수 증빙, 업무협의회비 협의록 누락 등을 확인합니다.</p>
+            </div>
+          </div>
+          <div id="warningList" class="warning-list"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="entryPanel">
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>기본 정보</h2>
+              <p>최종 표지와 운영비 총괄표에 들어가는 값입니다.</p>
+            </div>
+          </div>
+          <form class="project-grid" id="projectForm">
+            <label>
+              학교명
+              <input type="text" name="school" autocomplete="organization">
+            </label>
+            <label>
+              동아리명
+              <input type="text" name="clubName">
+            </label>
+            <label>
+              학교장 성명
+              <input type="text" name="principalName">
+            </label>
+            <label>
+              담당자 성명
+              <input type="text" name="managerName">
+            </label>
+            <label>
+              휴대전화
+              <input type="tel" name="managerPhone">
+            </label>
+            <label>
+              이메일 주소
+              <input type="email" name="managerEmail">
+            </label>
+            <label class="wide-field">
+              학교 주소
+              <input type="text" name="schoolAddress">
+            </label>
+            <label>
+              학교 대표 전화 번호
+              <input type="tel" name="schoolPhone">
+            </label>
+            <label>
+              이자
+              <input type="number" name="interest" min="0" step="1">
+            </label>
+          </form>
+        </section>
+
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>지출 입력</h2>
+              <p>영수증 한 건을 기준으로 입력합니다. 첨부는 파일명과 미리보기만 관리합니다.</p>
+            </div>
+            <button type="button" class="ghost-button" id="clearFormButton">새 입력</button>
+          </div>
+
+          <form id="expenseForm" class="expense-form">
+            <input type="hidden" name="id">
+            <div class="form-grid">
+              <label>
+                제출자
+                <input type="text" name="submitter" required>
+              </label>
+              <label>
+                학교
+                <input type="text" name="school" required>
+              </label>
+              <label>
+                동아리명
+                <input type="text" name="clubName" required>
+              </label>
+              <label>
+                예산 항목
+                <select name="category" required>
+                  <option value="research">연구활동비</option>
+                  <option value="direct">직접성 경비</option>
+                  <option value="meeting">업무협의회비</option>
+                </select>
+              </label>
+              <label class="wide-field">
+                사용 내용
+                <input type="text" name="description" required>
+              </label>
+              <label>
+                지출일자
+                <input type="date" name="date" required>
+              </label>
+              <label>
+                지출금액
+                <input type="number" name="amount" min="1" step="1" required>
+              </label>
+              <label>
+                품명
+                <input type="text" name="itemName" required>
+              </label>
+              <label>
+                지급처
+                <input type="text" name="vendor" required>
+              </label>
+              <label>
+                단위
+                <input type="text" name="unit" placeholder="개, 월, 식 등">
+              </label>
+              <label>
+                수량
+                <input type="number" name="quantity" min="0" step="1">
+              </label>
+              <label>
+                단가
+                <input type="number" name="unitPrice" min="0" step="1">
+              </label>
+              <label>
+                결제방법
+                <select name="paymentMethod" required>
+                  <option value="card">카드결제</option>
+                  <option value="transfer">계좌이체</option>
+                  <option value="other">기타</option>
+                </select>
+              </label>
+              <label>
+                증빙번호
+                <input type="text" name="evidenceNo" placeholder="자동 생성 가능">
+              </label>
+              <label class="wide-field">
+                비고
+                <textarea name="notes" rows="3"></textarea>
+              </label>
+            </div>
+
+            <fieldset class="attachment-fieldset">
+              <legend>첨부 파일</legend>
+              <p class="field-note">이미지와 PDF는 미리보기 대상입니다. 큰 파일은 브라우저 저장 공간 제한 때문에 JSON 또는 localStorage 저장이 실패할 수 있습니다.</p>
+              <div class="attachment-grid" id="attachmentInputs"></div>
+              <div class="preview-panel" id="currentPreview"></div>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="primary-button" id="submitExpenseButton">지출 추가</button>
+              <button type="button" class="ghost-button" id="sampleButton">샘플 데이터 복원</button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="reviewPanel">
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>제출 내역 검토</h2>
+              <p>제출자, 예산 항목, 증빙 누락 여부로 지출 내역을 확인합니다.</p>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <label>
+              제출자
+              <input type="search" id="submitterFilter" placeholder="이름 검색">
+            </label>
+            <label>
+              예산 항목
+              <select id="categoryFilter">
+                <option value="all">전체</option>
+                <option value="research">연구활동비</option>
+                <option value="direct">직접성 경비</option>
+                <option value="meeting">업무협의회비</option>
+              </select>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="missingFilter">
+              증빙 누락만
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table class="dense-table">
+              <thead>
+                <tr>
+                  <th>증빙번호</th>
+                  <th>지출일자</th>
+                  <th>제출자</th>
+                  <th>항목</th>
+                  <th>사용 내용</th>
+                  <th class="num">금액</th>
+                  <th>증빙</th>
+                  <th>상태</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody id="expenseRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="tab-panel print-tab" id="printPanel">
+        <section class="print-toolbar">
+          <p>브라우저 인쇄 대화상자에서 PDF로 저장할 수 있습니다.</p>
+          <button type="button" class="primary-button" id="printButtonSecondary">인쇄/PDF</button>
+        </section>
+        <article class="print-document" id="printDocument"></article>
+      </section>
+    </main>
+
+    <template id="attachmentInputTemplate">
+      <label class="attachment-box">
+        <span></span>
+        <input type="file" multiple>
+      </label>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
