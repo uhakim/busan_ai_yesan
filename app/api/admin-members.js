@@ -21,6 +21,14 @@ export default async function handler(request, response) {
     sendJson(response, 500, { error: "Vercel 환경변수 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY를 확인하세요." });
     return;
   }
+  const serviceKeyRole = getJwtRole(serviceRoleKey);
+  if (serviceKeyRole && serviceKeyRole !== "service_role") {
+    sendJson(response, 500, {
+      error: "SUPABASE_SERVICE_ROLE_KEY가 service_role 키가 아닙니다.",
+      detail: `현재 Vercel에 들어간 키 역할은 ${serviceKeyRole}입니다. Supabase Project API keys의 legacy service_role 키를 넣고 재배포하세요.`
+    });
+    return;
+  }
 
   const authHeader = request.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -432,4 +440,15 @@ function makeError(message, statusCode = 400) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function getJwtRole(key) {
+  const parts = String(key || "").split(".");
+  if (parts.length < 2) return "";
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return payload.role || "";
+  } catch {
+    return "";
+  }
 }
