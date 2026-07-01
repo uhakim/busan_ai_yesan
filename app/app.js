@@ -61,8 +61,7 @@ const ATTACHMENTS = [
 ];
 
 const MEMBER_ATTACHMENTS = [
-  { key: "receiptBundle", label: "영수증/구매내역서" },
-  { key: "foreignReceipt", label: "외화영수증" },
+  { key: "receiptBundle", label: "AI 서비스 영수증 (외화영수증)" },
   { key: "krwCardSlip", label: "국내카드사원화전표" }
 ];
 
@@ -2309,7 +2308,7 @@ async function handleMemberSubmit(event) {
   const krwCardSlipFiles = draftMemberAttachments.krwCardSlip || [];
 
   if (!receiptFiles.length) {
-    alert("AI 서비스 영수증을 첨부하세요.");
+    alert("AI 서비스 영수증(외화영수증)을 첨부하세요.");
     return;
   }
 
