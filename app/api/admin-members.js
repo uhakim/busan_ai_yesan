@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const jsonHeaders = {
@@ -17,16 +18,8 @@ export default async function handler(request, response) {
     return;
   }
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    sendJson(response, 500, { error: "Vercel 환경변수 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY를 확인하세요." });
-    return;
-  }
-  const serviceKeyRole = getJwtRole(serviceRoleKey);
-  if (serviceKeyRole && serviceKeyRole !== "service_role") {
-    sendJson(response, 500, {
-      error: "SUPABASE_SERVICE_ROLE_KEY가 service_role 키가 아닙니다.",
-      detail: `현재 Vercel에 들어간 키 역할은 ${serviceKeyRole}입니다. Supabase Project API keys의 legacy service_role 키를 넣고 재배포하세요.`
-    });
+  if (!supabaseUrl || !supabaseAnonKey) {
+    sendJson(response, 500, { error: "Vercel 환경변수 SUPABASE_URL, VITE_SUPABASE_ANON_KEY를 확인하세요." });
     return;
   }
 
@@ -37,17 +30,18 @@ export default async function handler(request, response) {
     return;
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+  const sessionClient = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false }
   });
 
-  const authResult = await adminClient.auth.getUser(token);
+  const authResult = await sessionClient.auth.getUser(token);
   if (authResult.error || !authResult.data.user) {
     sendJson(response, 401, { error: "로그인 세션을 확인하지 못했습니다." });
     return;
   }
 
-  const adminProfile = await getAdminProfile(adminClient, authResult.data.user);
+  const adminProfile = await getAdminProfile(sessionClient, authResult.data.user);
   if (!adminProfile) {
     sendJson(response, 403, {
       error: "관리자 권한이 필요합니다.",
@@ -58,10 +52,27 @@ export default async function handler(request, response) {
 
   try {
     if (request.method === "GET") {
-      const members = await listMembers(adminClient, adminProfile.club_id);
+      const members = await listMembers(sessionClient, adminProfile.club_id);
       sendJson(response, 200, { members });
       return;
     }
+
+    if (!serviceRoleKey) {
+      sendJson(response, 500, { error: "Vercel 환경변수 SUPABASE_SERVICE_ROLE_KEY를 확인하세요." });
+      return;
+    }
+    const serviceKeyRole = getJwtRole(serviceRoleKey);
+    if (serviceKeyRole && serviceKeyRole !== "service_role") {
+      sendJson(response, 500, {
+        error: "SUPABASE_SERVICE_ROLE_KEY가 service_role 키가 아닙니다.",
+        detail: `현재 Vercel에 들어간 키 역할은 ${serviceKeyRole}입니다. Supabase Project API keys의 legacy service_role 키를 넣고 재배포하세요.`
+      });
+      return;
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
 
     const body = await readBody(request);
 
