@@ -1,10 +1,33 @@
 const STORAGE_KEY = "aiClubSettlementPrototype.v1";
-const TOTAL_BUDGET = 2000000;
+
+const DEFAULT_BUDGETS = {
+  totalBudget: 2000000,
+  researchBudget: 1000000,
+  directBudget: 800000,
+  meetingBudget: 200000,
+  aiSubscriptionBudget: 800000
+};
+
+const NUMERIC_PROJECT_FIELDS = new Set([
+  "interest",
+  "totalBudget",
+  "researchBudget",
+  "directBudget",
+  "meetingBudget",
+  "aiSubscriptionBudget"
+]);
 
 const CATEGORIES = {
-  research: { label: "연구활동비", limit: 1000000, prefix: "1" },
-  direct: { label: "직접성 경비", limit: null, prefix: "3" },
-  meeting: { label: "업무협의회비", limit: 200000, prefix: "4" }
+  research: { label: "연구활동비", budgetKey: "researchBudget", prefix: "1" },
+  direct: { label: "직접성 경비", budgetKey: "directBudget", prefix: "3" },
+  meeting: { label: "업무협의회비", budgetKey: "meetingBudget", prefix: "4" }
+};
+
+const DIRECT_TYPES = {
+  ai_subscription: { label: "AI 구독료" },
+  book: { label: "도서" },
+  printing: { label: "인쇄비" },
+  other: { label: "기타 직접성 경비" }
 };
 
 const ATTACHMENTS = [
@@ -16,6 +39,29 @@ const ATTACHMENTS = [
   { key: "meetingMinutes", label: "협의록" },
   { key: "photo", label: "사진" }
 ];
+
+const MEMBER_ATTACHMENTS = [
+  { key: "receiptBundle", label: "영수증/구매내역서" },
+  { key: "foreignReceipt", label: "외화영수증" },
+  { key: "krwCardSlip", label: "국내카드사원화전표" }
+];
+
+function makeSampleFile(name) {
+  return {
+    name,
+    type: "application/pdf",
+    size: 12000,
+    dataUrl: ""
+  };
+}
+
+function sampleAiAttachments(label) {
+  const attachments = emptyAttachments();
+  attachments.cardReceipt = [makeSampleFile(`${label}-receipt.pdf`)];
+  attachments.foreignReceipt = [makeSampleFile(`${label}-foreign-receipt.pdf`)];
+  attachments.krwCardSlip = [makeSampleFile(`${label}-krw-card-slip.pdf`)];
+  return attachments;
+}
 
 const sampleState = {
   project: {
@@ -29,7 +75,11 @@ const sampleState = {
     managerPhone: "",
     managerEmail: "",
     interest: 0,
-    totalBudget: TOTAL_BUDGET
+    totalBudget: DEFAULT_BUDGETS.totalBudget,
+    researchBudget: DEFAULT_BUDGETS.researchBudget,
+    directBudget: DEFAULT_BUDGETS.directBudget,
+    meetingBudget: DEFAULT_BUDGETS.meetingBudget,
+    aiSubscriptionBudget: DEFAULT_BUDGETS.aiSubscriptionBudget
   },
   entries: [
     {
@@ -38,9 +88,10 @@ const sampleState = {
       school: "부산AI초등학교",
       clubName: "AI 수업 연구 동아리",
       category: "direct",
+      directType: "ai_subscription",
       status: "submitted",
-      date: "2026-07-01",
-      description: "AI 서비스 구독료",
+      date: "2026-07-05",
+      description: "OpenAI AI 구독료",
       amount: 30000,
       itemName: "ChatGPT 구독",
       vendor: "OpenAI",
@@ -49,50 +100,183 @@ const sampleState = {
       unitPrice: 30000,
       paymentMethod: "card",
       evidenceNo: "3-01",
-      notes: "해외 결제 예시. 외화 영수증과 국내 카드사 원화 전표를 첨부해야 합니다.",
-      attachments: {
-        cardReceipt: [],
-        transferConfirmation: [],
-        transactionStatement: [],
-        foreignReceipt: [],
-        krwCardSlip: [],
-        meetingMinutes: [],
-        photo: []
-      }
+      notes: "7월 구독료 샘플",
+      attachments: sampleAiAttachments("openai-2026-07")
     },
     {
       id: "EXP-002",
+      submitter: "김유하",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-08-05",
+      description: "OpenAI AI 구독료",
+      amount: 30000,
+      itemName: "ChatGPT 구독",
+      vendor: "OpenAI",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 30000,
+      paymentMethod: "card",
+      evidenceNo: "3-02",
+      notes: "8월 구독료 샘플",
+      attachments: sampleAiAttachments("openai-2026-08")
+    },
+    {
+      id: "EXP-003",
+      submitter: "김유하",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-09-05",
+      description: "OpenAI AI 구독료",
+      amount: 30000,
+      itemName: "ChatGPT 구독",
+      vendor: "OpenAI",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 30000,
+      paymentMethod: "card",
+      evidenceNo: "3-03",
+      notes: "9월 구독료 샘플",
+      attachments: sampleAiAttachments("openai-2026-09")
+    },
+    {
+      id: "EXP-004",
+      submitter: "김유하",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-10-05",
+      description: "OpenAI AI 구독료",
+      amount: 30000,
+      itemName: "ChatGPT 구독",
+      vendor: "OpenAI",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 30000,
+      paymentMethod: "card",
+      evidenceNo: "3-04",
+      notes: "10월 구독료 샘플",
+      attachments: sampleAiAttachments("openai-2026-10")
+    },
+    {
+      id: "EXP-005",
       submitter: "이서연",
       school: "부산AI초등학교",
       clubName: "AI 수업 연구 동아리",
-      category: "meeting",
+      category: "direct",
+      directType: "ai_subscription",
       status: "submitted",
-      date: "2026-07-10",
-      description: "1차 수업 설계 협의회 다과",
-      amount: 48000,
-      itemName: "다과",
-      vendor: "학교앞카페",
-      unit: "식",
+      date: "2026-07-12",
+      description: "Claude AI 구독료",
+      amount: 22000,
+      itemName: "Claude Pro 구독",
+      vendor: "Claude",
+      unit: "월",
       quantity: 1,
-      unitPrice: 48000,
+      unitPrice: 22000,
       paymentMethod: "card",
-      evidenceNo: "4-01",
-      notes: "협의록과 사진 첨부 필요",
-      attachments: {
-        cardReceipt: [],
-        transferConfirmation: [],
-        transactionStatement: [],
-        foreignReceipt: [],
-        krwCardSlip: [],
-        meetingMinutes: [],
-        photo: []
-      }
+      evidenceNo: "3-05",
+      notes: "7월 구독료 샘플",
+      attachments: sampleAiAttachments("claude-2026-07")
+    },
+    {
+      id: "EXP-006",
+      submitter: "이서연",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-09-12",
+      description: "Claude AI 구독료",
+      amount: 22000,
+      itemName: "Claude Pro 구독",
+      vendor: "Claude",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 22000,
+      paymentMethod: "card",
+      evidenceNo: "3-06",
+      notes: "9월 구독료 샘플",
+      attachments: sampleAiAttachments("claude-2026-09")
+    },
+    {
+      id: "EXP-007",
+      submitter: "박민준",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-08-20",
+      description: "Gemini AI 구독료",
+      amount: 29000,
+      itemName: "Gemini Advanced 구독",
+      vendor: "Gemini",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 29000,
+      paymentMethod: "card",
+      evidenceNo: "3-07",
+      notes: "8월 구독료 샘플",
+      attachments: sampleAiAttachments("gemini-2026-08")
+    },
+    {
+      id: "EXP-008",
+      submitter: "박민준",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-10-20",
+      description: "Gemini AI 구독료",
+      amount: 29000,
+      itemName: "Gemini Advanced 구독",
+      vendor: "Gemini",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 29000,
+      paymentMethod: "card",
+      evidenceNo: "3-08",
+      notes: "10월 구독료 샘플",
+      attachments: sampleAiAttachments("gemini-2026-10")
+    },
+    {
+      id: "EXP-009",
+      submitter: "최하늘",
+      school: "부산AI초등학교",
+      clubName: "AI 수업 연구 동아리",
+      category: "direct",
+      directType: "ai_subscription",
+      status: "submitted",
+      date: "2026-09-24",
+      description: "Canva AI 구독료",
+      amount: 18000,
+      itemName: "Canva Pro 구독",
+      vendor: "Canva",
+      unit: "월",
+      quantity: 1,
+      unitPrice: 18000,
+      paymentMethod: "card",
+      evidenceNo: "3-09",
+      notes: "9월 구독료 샘플",
+      attachments: sampleAiAttachments("canva-2026-09")
     }
   ]
 };
 
 let state = loadInitialState();
 let draftAttachments = emptyAttachments();
+let draftMemberAttachments = emptyMemberAttachments();
 
 const els = {};
 
@@ -101,6 +285,7 @@ document.addEventListener("DOMContentLoaded", () => {
   buildAttachmentInputs();
   bindEvents();
   populateProjectForm();
+  syncDirectTypeField();
   renderAll();
 });
 
@@ -110,14 +295,22 @@ function bindElements() {
   els.warningList = document.querySelector("#warningList");
   els.projectForm = document.querySelector("#projectForm");
   els.expenseForm = document.querySelector("#expenseForm");
+  els.memberSubmitForm = document.querySelector("#memberSubmitForm");
+  els.directTypeField = document.querySelector("#directTypeField");
   els.attachmentInputs = document.querySelector("#attachmentInputs");
   els.currentPreview = document.querySelector("#currentPreview");
+  els.memberPreview = document.querySelector("#memberPreview");
   els.expenseRows = document.querySelector("#expenseRows");
+  els.aiBudgetSummary = document.querySelector("#aiBudgetSummary");
+  els.aiMonthlyHead = document.querySelector("#aiMonthlyHead");
+  els.aiMonthlyRows = document.querySelector("#aiMonthlyRows");
+  els.aiMonthlyFoot = document.querySelector("#aiMonthlyFoot");
   els.printDocument = document.querySelector("#printDocument");
   els.submitterFilter = document.querySelector("#submitterFilter");
   els.categoryFilter = document.querySelector("#categoryFilter");
   els.missingFilter = document.querySelector("#missingFilter");
   els.submitExpenseButton = document.querySelector("#submitExpenseButton");
+  els.memberSubmitButton = document.querySelector("#memberSubmitButton");
 }
 
 function bindEvents() {
@@ -141,7 +334,7 @@ function bindEvents() {
     const data = new FormData(els.projectForm);
     Object.keys(state.project).forEach((key) => {
       if (data.has(key)) {
-        state.project[key] = key === "interest" ? toNumber(data.get(key)) : data.get(key).trim();
+        state.project[key] = NUMERIC_PROJECT_FIELDS.has(key) ? toNumber(data.get(key)) : data.get(key).trim();
       }
     });
     saveLocal({ silent: true });
@@ -149,10 +342,33 @@ function bindEvents() {
   });
 
   els.expenseForm.addEventListener("submit", handleExpenseSubmit);
+  els.expenseForm.elements.category.addEventListener("change", syncDirectTypeField);
+  els.memberSubmitForm.addEventListener("submit", handleMemberSubmit);
+  document.querySelector("#clearMemberFormButton").addEventListener("click", resetMemberForm);
+  document.querySelectorAll("[data-member-attachment-key]").forEach((input) => {
+    input.addEventListener("change", handleMemberAttachmentChange);
+  });
   [els.submitterFilter, els.categoryFilter, els.missingFilter].forEach((el) => {
     el.addEventListener("input", renderExpenseRows);
     el.addEventListener("change", renderExpenseRows);
   });
+}
+
+function syncDirectTypeField() {
+  const categoryField = els.expenseForm?.elements.category;
+  const directTypeSelect = els.expenseForm?.elements.directType;
+  if (!categoryField || !directTypeSelect || !els.directTypeField) return;
+
+  const isDirect = categoryField.value === "direct";
+  els.directTypeField.hidden = !isDirect;
+  directTypeSelect.disabled = !isDirect;
+
+  if (isDirect && !directTypeSelect.value) {
+    directTypeSelect.value = "ai_subscription";
+  }
+  if (!isDirect) {
+    directTypeSelect.value = "";
+  }
 }
 
 function buildAttachmentInputs() {
@@ -171,6 +387,12 @@ function buildAttachmentInputs() {
 }
 
 function loadInitialState() {
+  if (shouldLoadSampleFromUrl()) {
+    const restored = structuredClone(sampleState);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+    return restored;
+  }
+
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
     return structuredClone(sampleState);
@@ -184,33 +406,42 @@ function loadInitialState() {
   }
 }
 
+function shouldLoadSampleFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("sample") === "1";
+}
+
 function normalizeState(raw) {
   const normalized = {
     project: { ...sampleState.project, ...(raw.project || {}) },
     entries: Array.isArray(raw.entries) ? raw.entries : []
   };
 
-  normalized.project.totalBudget = TOTAL_BUDGET;
-  normalized.entries = normalized.entries.map((entry, index) => ({
-    id: entry.id || nextId(index + 1),
-    status: entry.status || "submitted",
-    submitter: entry.submitter || "",
-    school: entry.school || "",
-    clubName: entry.clubName || "",
-    category: CATEGORIES[entry.category] ? entry.category : "direct",
-    date: entry.date || "",
-    description: entry.description || "",
-    amount: toNumber(entry.amount),
-    itemName: entry.itemName || "",
-    vendor: entry.vendor || "",
-    unit: entry.unit || "",
-    quantity: toNumber(entry.quantity),
-    unitPrice: toNumber(entry.unitPrice),
-    paymentMethod: entry.paymentMethod || "card",
-    evidenceNo: entry.evidenceNo || "",
-    notes: entry.notes || "",
-    attachments: { ...emptyAttachments(), ...(entry.attachments || {}) }
-  }));
+  normalizeProjectBudgets(normalized.project);
+  normalized.entries = normalized.entries.map((entry, index) => {
+    const category = CATEGORIES[entry.category] ? entry.category : "direct";
+    return {
+      id: entry.id || nextId(index + 1),
+      status: entry.status || "submitted",
+      submitter: entry.submitter || "",
+      school: entry.school || "",
+      clubName: entry.clubName || "",
+      category,
+      directType: normalizeDirectType({ ...entry, category }),
+      date: entry.date || "",
+      description: entry.description || "",
+      amount: toNumber(entry.amount),
+      itemName: entry.itemName || "",
+      vendor: entry.vendor || "",
+      unit: entry.unit || "",
+      quantity: toNumber(entry.quantity),
+      unitPrice: toNumber(entry.unitPrice),
+      paymentMethod: entry.paymentMethod || "card",
+      evidenceNo: entry.evidenceNo || "",
+      notes: entry.notes || "",
+      attachments: { ...emptyAttachments(), ...(entry.attachments || {}) }
+    };
+  });
 
   return normalized;
 }
@@ -220,6 +451,32 @@ function emptyAttachments() {
     acc[attachment.key] = [];
     return acc;
   }, {});
+}
+
+function emptyMemberAttachments() {
+  return MEMBER_ATTACHMENTS.reduce((acc, attachment) => {
+    acc[attachment.key] = [];
+    return acc;
+  }, {});
+}
+
+function normalizeProjectBudgets(project) {
+  Object.entries(DEFAULT_BUDGETS).forEach(([key, fallback]) => {
+    project[key] = normalizeBudgetValue(project[key], fallback);
+  });
+  project.interest = normalizeBudgetValue(project.interest, 0);
+}
+
+function normalizeBudgetValue(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function normalizeDirectType(entry) {
+  if (entry.category !== "direct") return "";
+  if (DIRECT_TYPES[entry.directType]) return entry.directType;
+  return looksAiSubscription(entry) ? "ai_subscription" : "other";
 }
 
 function populateProjectForm() {
@@ -234,6 +491,7 @@ function populateProjectForm() {
 function renderAll() {
   renderSummary();
   renderBudgetRows();
+  renderAiSubscriptionSummary();
   renderWarnings();
   renderExpenseRows();
   renderPrintDocument();
@@ -249,20 +507,31 @@ function activateTab(tabName) {
   });
 }
 
+function getProjectBudget(key) {
+  return normalizeBudgetValue(state.project[key], DEFAULT_BUDGETS[key] ?? 0);
+}
+
+function getCategoryBudget(categoryKey) {
+  const category = CATEGORIES[categoryKey];
+  return category ? getProjectBudget(category.budgetKey) : 0;
+}
+
 function getTotals() {
   const categoryTotals = Object.fromEntries(Object.keys(CATEGORIES).map((key) => [key, 0]));
   state.entries.forEach((entry) => {
     categoryTotals[entry.category] += toNumber(entry.amount);
   });
 
+  const totalBudget = getProjectBudget("totalBudget");
   const spent = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
   const missingCount = state.entries.filter((entry) => getEntryWarnings(entry).length > 0).length;
 
   return {
     categoryTotals,
+    totalBudget,
     spent,
-    remaining: TOTAL_BUDGET - spent,
-    useRate: TOTAL_BUDGET ? Math.round((spent / TOTAL_BUDGET) * 1000) / 10 : 0,
+    remaining: totalBudget - spent,
+    useRate: totalBudget ? Math.round((spent / totalBudget) * 1000) / 10 : 0,
     missingCount
   };
 }
@@ -270,7 +539,7 @@ function getTotals() {
 function renderSummary() {
   const totals = getTotals();
   const metrics = [
-    ["총 예산", formatWon(TOTAL_BUDGET)],
+    ["총 예산", formatWon(totals.totalBudget)],
     ["사용액", formatWon(totals.spent)],
     ["잔액", formatWon(totals.remaining)],
     ["사용률", `${totals.useRate}%`],
@@ -292,12 +561,12 @@ function renderBudgetRows() {
   els.budgetRows.innerHTML = Object.entries(CATEGORIES)
     .map(([key, category]) => {
       const spent = totals.categoryTotals[key];
-      const limit = category.limit;
-      const remaining = limit === null ? null : limit - spent;
-      const denominator = limit || TOTAL_BUDGET;
+      const limit = getCategoryBudget(key);
+      const remaining = limit - spent;
+      const denominator = limit || totals.totalBudget;
       const rate = denominator ? Math.round((spent / denominator) * 1000) / 10 : 0;
-      const over = limit !== null && spent > limit;
-      const totalOver = totals.spent > TOTAL_BUDGET;
+      const over = spent > limit;
+      const totalOver = totals.spent > totals.totalBudget;
       const barClass = over || totalOver ? "danger" : rate >= 90 ? "warn" : "";
       const status = over
         ? `<span class="status-pill danger">한도 초과</span>`
@@ -308,9 +577,9 @@ function renderBudgetRows() {
       return `
         <tr>
           <td><strong>${category.label}</strong></td>
-          <td class="num">${limit === null ? "-" : formatWon(limit)}</td>
+          <td class="num">${formatWon(limit)}</td>
           <td class="num">${formatWon(spent)}</td>
-          <td class="num">${remaining === null ? "-" : formatWon(remaining)}</td>
+          <td class="num">${formatWon(remaining)}</td>
           <td>
             <div class="progress-track"><div class="progress-bar ${barClass}" style="width:${Math.min(rate, 100)}%"></div></div>
             <span class="progress-text">${rate}%</span>
@@ -322,23 +591,159 @@ function renderBudgetRows() {
     .join("");
 }
 
+function getAiSubscriptionSummary() {
+  const entries = state.entries.filter(isAiSubscriptionEntry);
+  const submitterMap = new Map();
+  const monthSet = new Set();
+  const monthTotals = {};
+
+  entries.forEach((entry) => {
+    const submitter = normalizeSubmitterName(entry.submitter);
+    const month = getEntryMonth(entry.date);
+    monthSet.add(month);
+
+    if (!submitterMap.has(submitter)) {
+      submitterMap.set(submitter, {
+        submitter,
+        amount: 0,
+        count: 0,
+        vendors: new Set(),
+        warningCount: 0,
+        monthlyTotals: {}
+      });
+    }
+
+    const row = submitterMap.get(submitter);
+    const amount = toNumber(entry.amount);
+    row.amount += amount;
+    row.count += 1;
+    row.monthlyTotals[month] = (row.monthlyTotals[month] || 0) + amount;
+    monthTotals[month] = (monthTotals[month] || 0) + amount;
+    row.warningCount += getEntryWarnings(entry).length ? 1 : 0;
+    if (entry.vendor) row.vendors.add(entry.vendor);
+  });
+
+  const submitters = Array.from(submitterMap.values())
+    .sort((a, b) => a.submitter.localeCompare(b.submitter, "ko-KR"));
+  const months = Array.from(monthSet).sort();
+  const total = entries.reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const budget = getProjectBudget("aiSubscriptionBudget");
+
+  return { entries, submitters, months, monthTotals, total, budget, remaining: budget - total };
+}
+
+function renderAiSubscriptionSummary() {
+  const summary = getAiSubscriptionSummary();
+  renderAiBudgetSummary(summary);
+
+  if (!summary.entries.length) {
+    els.aiMonthlyHead.innerHTML = `
+      <tr>
+        <th>제출자</th>
+        <th class="num">합계</th>
+      </tr>
+    `;
+    els.aiMonthlyRows.innerHTML = `
+      <tr>
+        <td colspan="2" class="muted">월별로 표시할 AI 구독료가 없습니다.</td>
+      </tr>
+    `;
+    els.aiMonthlyFoot.innerHTML = renderAiMonthlyFoot(summary);
+    return;
+  }
+
+  els.aiMonthlyHead.innerHTML = `
+    <tr>
+      <th>제출자</th>
+      ${summary.months.map((month) => `<th class="num">${escapeHtml(formatMonthLabel(month))}</th>`).join("")}
+      <th class="num">합계</th>
+    </tr>
+  `;
+
+  els.aiMonthlyRows.innerHTML = summary.submitters.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.submitter)}</td>
+      ${summary.months.map((month) => `<td class="num">${formatWon(row.monthlyTotals[month] || 0)}</td>`).join("")}
+      <td class="num"><strong>${formatWon(row.amount)}</strong></td>
+    </tr>
+  `).join("");
+  els.aiMonthlyFoot.innerHTML = renderAiMonthlyFoot(summary);
+}
+
+function renderAiBudgetSummary(summary) {
+  const remainingClass = summary.remaining < 0 ? "danger" : "";
+  const metrics = [
+    ["AI 구독료 배정액", formatWon(summary.budget)],
+    ["AI 구독료 사용액", formatWon(summary.total)],
+    ["사용가능 잔액", formatWon(summary.remaining), remainingClass]
+  ];
+
+  els.aiBudgetSummary.innerHTML = metrics
+    .map(([label, value, className = ""]) => `
+      <div class="metric ${className}">
+        <span>${label}</span>
+        <strong>${value}</strong>
+      </div>
+    `)
+    .join("");
+}
+
+function renderAiMonthlyFoot(summary) {
+  const monthTotalCells = summary.months
+    .map((month) => `<td class="num">${formatWon(summary.monthTotals[month] || 0)}</td>`)
+    .join("");
+  const remainingSpacer = summary.months.length ? `<td colspan="${summary.months.length}"></td>` : "";
+  const remainingClass = summary.remaining < 0 ? "danger-text" : "";
+
+  return `
+    <tr class="total-row">
+      <th>전체 합계</th>
+      ${monthTotalCells}
+      <td class="num"><strong>${formatWon(summary.total)}</strong></td>
+    </tr>
+    <tr class="balance-row">
+      <th>사용가능 잔액</th>
+      ${remainingSpacer}
+      <td class="num ${remainingClass}"><strong>${formatWon(summary.remaining)}</strong></td>
+    </tr>
+  `;
+}
+
 function renderWarnings() {
   const totals = getTotals();
   const warnings = [];
 
-  if (totals.spent > TOTAL_BUDGET) {
+  if (totals.spent > totals.totalBudget) {
     warnings.push({
       title: "총 예산 초과",
-      detail: `총 사용액이 ${formatWon(totals.spent)}으로 총 예산 ${formatWon(TOTAL_BUDGET)}을 초과했습니다.`
+      detail: `총 사용액이 ${formatWon(totals.spent)}으로 총 예산 ${formatWon(totals.totalBudget)}을 초과했습니다.`
+    });
+  }
+
+  const allocatedTotal = Object.keys(CATEGORIES).reduce((sum, key) => sum + getCategoryBudget(key), 0);
+  if (allocatedTotal !== totals.totalBudget) {
+    warnings.push({
+      title: "예산 배정 합계 확인",
+      detail: `항목별 예산 합계가 ${formatWon(allocatedTotal)}으로 총 예산 ${formatWon(totals.totalBudget)}과 다릅니다.`
+    });
+  }
+
+  const directBudget = getCategoryBudget("direct");
+  const aiSubscriptionBudget = getProjectBudget("aiSubscriptionBudget");
+  if (aiSubscriptionBudget > directBudget) {
+    warnings.push({
+      title: "AI 구독료 배정액 확인",
+      detail: `AI 구독료 배정액 ${formatWon(aiSubscriptionBudget)}이 직접성 경비 예산 ${formatWon(directBudget)}보다 큽니다.`
     });
   }
 
   Object.entries(CATEGORIES).forEach(([key, category]) => {
     const spent = totals.categoryTotals[key];
-    if (category.limit !== null && spent > category.limit) {
+    const limit = getCategoryBudget(key);
+    if (spent > limit) {
       warnings.push({
         title: `${category.label} 한도 초과`,
-        detail: `${category.label} 사용액이 ${formatWon(spent)}으로 한도 ${formatWon(category.limit)}을 초과했습니다.`
+        detail: `${category.label} 사용액이 ${formatWon(spent)}으로 예산 ${formatWon(limit)}을 초과했습니다.`
       });
     }
   });
@@ -390,6 +795,9 @@ function renderExpenseRows() {
 
   els.expenseRows.innerHTML = rows.map((entry) => {
     const warnings = getEntryWarnings(entry);
+    const directTypeLabel = entry.category === "direct" && DIRECT_TYPES[entry.directType]
+      ? DIRECT_TYPES[entry.directType].label
+      : "";
     const attachmentNames = ATTACHMENTS
       .flatMap((attachment) => (entry.attachments[attachment.key] || []).map((file) => file.name))
       .join(", ");
@@ -398,7 +806,10 @@ function renderExpenseRows() {
         <td>${escapeHtml(entry.evidenceNo || "-")}</td>
         <td>${escapeHtml(entry.date || "-")}</td>
         <td>${escapeHtml(entry.submitter || "-")}</td>
-        <td>${CATEGORIES[entry.category].label}</td>
+        <td>
+          ${CATEGORIES[entry.category].label}
+          ${directTypeLabel ? `<div class="muted">${escapeHtml(directTypeLabel)}</div>` : ""}
+        </td>
         <td>
           <strong>${escapeHtml(entry.description || "-")}</strong>
           <div class="muted">${escapeHtml(entry.vendor || "")}</div>
@@ -424,7 +835,7 @@ function renderPrintDocument() {
   const totals = getTotals();
   const project = state.project;
   const interest = toNumber(project.interest);
-  const finalBalance = TOTAL_BUDGET - totals.spent + interest;
+  const finalBalance = totals.totalBudget - totals.spent + interest;
 
   els.printDocument.innerHTML = `
     <section class="print-page">
@@ -436,8 +847,8 @@ function renderPrintDocument() {
           <tr><th>학교 주소</th><td colspan="3">${escapeHtml(project.schoolAddress || "")}</td></tr>
           <tr><th>학교 대표 전화 번호</th><td>${escapeHtml(project.schoolPhone || "")}</td><th>휴대전화</th><td>${escapeHtml(project.managerPhone || "")}</td></tr>
           <tr><th>이메일 주소</th><td colspan="3">${escapeHtml(project.managerEmail || "")}</td></tr>
-          <tr><th>운영비</th><td>${formatWon(TOTAL_BUDGET)}</td><th>집행액</th><td>${formatWon(totals.spent)}</td></tr>
-          <tr><th>집행잔액</th><td>${formatWon(TOTAL_BUDGET - totals.spent)}</td><th>이자 포함 잔액</th><td>${formatWon(finalBalance)}</td></tr>
+          <tr><th>운영비</th><td>${formatWon(totals.totalBudget)}</td><th>집행액</th><td>${formatWon(totals.spent)}</td></tr>
+          <tr><th>집행잔액</th><td>${formatWon(totals.remaining)}</td><th>이자 포함 잔액</th><td>${formatWon(finalBalance)}</td></tr>
         </tbody>
       </table>
       <p>위와 같이 2026 AI 디지털 교사 동아리 운영비 집행 내역을 정산합니다.</p>
@@ -459,27 +870,29 @@ function renderPrintDocument() {
         <tbody>
           ${Object.entries(CATEGORIES).map(([key, category]) => {
             const spent = totals.categoryTotals[key];
-            const limit = category.limit;
+            const limit = getCategoryBudget(key);
             return `
               <tr>
                 <td>${category.label}</td>
-                <td class="num">${limit === null ? "-" : formatWon(limit)}</td>
+                <td class="num">${formatWon(limit)}</td>
                 <td class="num">${formatWon(spent)}</td>
-                <td class="num">${limit === null ? "-" : formatWon(limit - spent)}</td>
-                <td>${limit !== null && spent > limit ? "한도 초과" : ""}</td>
+                <td class="num">${formatWon(limit - spent)}</td>
+                <td>${spent > limit ? "한도 초과" : ""}</td>
               </tr>
             `;
           }).join("")}
           <tr>
             <th>합계</th>
-            <th class="num">${formatWon(TOTAL_BUDGET)}</th>
+            <th class="num">${formatWon(totals.totalBudget)}</th>
             <th class="num">${formatWon(totals.spent)}</th>
-            <th class="num">${formatWon(TOTAL_BUDGET - totals.spent)}</th>
+            <th class="num">${formatWon(totals.remaining)}</th>
             <th></th>
           </tr>
         </tbody>
       </table>
     </section>
+
+    ${renderAiSubscriptionPrintPage()}
 
     ${Object.entries(CATEGORIES).map(([key, category]) => renderCategoryPrintPage(key, category)).join("")}
 
@@ -517,6 +930,59 @@ function renderPrintDocument() {
       <div class="preview-panel">
         ${renderAllPrintPreviews()}
       </div>
+    </section>
+  `;
+}
+
+function renderAiSubscriptionPrintPage() {
+  const summary = getAiSubscriptionSummary();
+  const monthTotalCells = summary.months
+    .map((month) => `<td class="num">${formatWon(summary.monthTotals[month] || 0)}</td>`)
+    .join("");
+  const remainingSpacer = summary.months.length ? `<td colspan="${summary.months.length}"></td>` : "";
+
+  return `
+    <section class="print-page">
+      <h2 class="print-title">AI 구독료 회원별·월별 현황</h2>
+      <table class="print-info">
+        <tbody>
+          <tr><th>AI 구독료 배정액</th><td class="num">${formatWon(summary.budget)}</td><th>사용액</th><td class="num">${formatWon(summary.total)}</td></tr>
+          <tr><th>사용가능 잔액</th><td class="num">${formatWon(summary.remaining)}</td><th>집계 기준</th><td>지출일자 결제월</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="print-subtitle">회원별 월별 사용액</h3>
+      <table class="print-info">
+        <thead>
+          <tr>
+            <th>제출자</th>
+            ${summary.months.map((month) => `<th>${escapeHtml(formatMonthLabel(month))}</th>`).join("")}
+            <th>합계</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${summary.submitters.length ? summary.submitters.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.submitter)}</td>
+              ${summary.months.map((month) => `<td class="num">${formatWon(row.monthlyTotals[month] || 0)}</td>`).join("")}
+              <td class="num">${formatWon(row.amount)}</td>
+            </tr>
+          `).join("") : `<tr><td colspan="2">월별로 표시할 AI 구독료 없음</td></tr>`}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th>전체 합계</th>
+            ${monthTotalCells}
+            <td class="num">${formatWon(summary.total)}</td>
+          </tr>
+          <tr>
+            <th>사용가능 잔액</th>
+            ${remainingSpacer}
+            <td class="num">${formatWon(summary.remaining)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="todo-box">집계 기준: 예산 항목이 직접성 경비이고 세부 유형이 AI 구독료인 건을 지출일자의 결제월 기준으로 합산합니다.</p>
     </section>
   `;
 }
@@ -606,6 +1072,14 @@ async function handleAttachmentChange(event) {
   renderDraftPreview();
 }
 
+async function handleMemberAttachmentChange(event) {
+  const input = event.target;
+  const key = input.dataset.memberAttachmentKey;
+  const files = Array.from(input.files || []);
+  draftMemberAttachments[key] = await Promise.all(files.map(readFileAsDataUrl));
+  renderMemberPreview();
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -647,6 +1121,77 @@ function renderDraftPreview() {
   }).join("");
 }
 
+function renderMemberPreview() {
+  const items = MEMBER_ATTACHMENTS.flatMap((attachment) => {
+    return (draftMemberAttachments[attachment.key] || []).map((file) => ({ ...file, label: attachment.label }));
+  });
+
+  if (!items.length) {
+    els.memberPreview.innerHTML = "";
+    return;
+  }
+
+  els.memberPreview.innerHTML = items.map((file) => {
+    const media = file.type.startsWith("image/")
+      ? `<img src="${file.dataUrl}" alt="">`
+      : file.type === "application/pdf"
+        ? `<iframe src="${file.dataUrl}" title="${escapeHtml(file.name)}"></iframe>`
+        : "";
+    return `
+      <div class="preview-item">
+        ${media || `<div>미리보기 없음</div>`}
+        <div>${escapeHtml(file.label)}<br>${escapeHtml(file.name)}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function handleMemberSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const receiptFiles = draftMemberAttachments.receiptBundle || [];
+
+  if (!receiptFiles.length) {
+    alert("영수증/구매내역서를 첨부하세요.");
+    return;
+  }
+
+  const vendor = data.get("vendor").trim();
+  const amount = toNumber(data.get("amount"));
+  const attachments = emptyAttachments();
+  attachments.cardReceipt = receiptFiles;
+  attachments.foreignReceipt = draftMemberAttachments.foreignReceipt || [];
+  attachments.krwCardSlip = draftMemberAttachments.krwCardSlip || [];
+
+  const entry = {
+    id: nextId(),
+    submitter: data.get("submitter").trim(),
+    school: state.project.school || "",
+    clubName: state.project.clubName || "",
+    category: "direct",
+    directType: "ai_subscription",
+    status: "submitted",
+    date: data.get("date"),
+    description: `${vendor} AI 구독료`,
+    amount,
+    itemName: "AI 구독료",
+    vendor,
+    unit: "월",
+    quantity: 1,
+    unitPrice: amount,
+    paymentMethod: "card",
+    evidenceNo: makeEvidenceNo("direct"),
+    notes: data.get("notes").trim(),
+    attachments
+  };
+
+  state.entries.push(entry);
+  saveLocal({ silent: true });
+  resetMemberForm();
+  renderAll();
+  activateTab("aiUsage");
+}
+
 function handleExpenseSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -658,6 +1203,7 @@ function handleExpenseSubmit(event) {
     school: data.get("school").trim(),
     clubName: data.get("clubName").trim(),
     category: data.get("category"),
+    directType: data.get("category") === "direct" ? data.get("directType") || "ai_subscription" : "",
     status: "submitted",
     date: data.get("date"),
     description: data.get("description").trim(),
@@ -722,6 +1268,17 @@ function resetExpenseForm() {
   if (state.project.clubName) {
     els.expenseForm.elements.clubName.value = state.project.clubName;
   }
+
+  syncDirectTypeField();
+}
+
+function resetMemberForm() {
+  els.memberSubmitForm.reset();
+  draftMemberAttachments = emptyMemberAttachments();
+  document.querySelectorAll("[data-member-attachment-key]").forEach((input) => {
+    input.value = "";
+  });
+  renderMemberPreview();
 }
 
 window.editEntry = function editEntry(id) {
@@ -737,6 +1294,7 @@ window.editEntry = function editEntry(id) {
 
   draftAttachments = structuredClone(entry.attachments || emptyAttachments());
   els.submitExpenseButton.textContent = "수정 저장";
+  syncDirectTypeField();
   renderDraftPreview();
   activateTab("entry");
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -794,7 +1352,15 @@ function getEntryWarnings(entry) {
   }
 
   if (entry.category === "direct") {
-    if (!hasAttachment(entry, "transactionStatement")) {
+    if (!entry.directType || !DIRECT_TYPES[entry.directType]) {
+      warnings.push("직접성 경비 세부 유형을 확인하세요.");
+    }
+    if (entry.directType !== "ai_subscription" && looksAiSubscription(entry)) {
+      warnings.push("AI 구독료로 보이는 직접성 경비입니다. 세부 유형을 AI 구독료로 확인하세요.");
+    }
+    const hasDirectEvidence = hasAttachment(entry, "transactionStatement")
+      || (entry.directType === "ai_subscription" && hasAttachment(entry, "cardReceipt"));
+    if (!hasDirectEvidence) {
       warnings.push("직접성 경비는 거래명세서 또는 구매내역서 첨부를 확인하세요.");
     }
     if (looksForeignPayment(entry)) {
@@ -813,6 +1379,30 @@ function getEntryWarnings(entry) {
   if (/자산|기자재|태블릿|노트북|프린터|카메라/.test(memo)) warnings.push("자산취득성 물품은 정산 가능 여부를 확인하세요.");
 
   return warnings;
+}
+
+function isAiSubscriptionEntry(entry) {
+  return entry.category === "direct" && entry.directType === "ai_subscription";
+}
+
+function normalizeSubmitterName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ") || "미입력";
+}
+
+function getEntryMonth(date) {
+  const value = String(date || "");
+  return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : "날짜 미입력";
+}
+
+function formatMonthLabel(month) {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return month;
+  return `${match[1]}.${match[2]}`;
+}
+
+function looksAiSubscription(entry) {
+  const text = `${entry.description} ${entry.itemName} ${entry.vendor} ${entry.notes}`.toLowerCase();
+  return /구독|subscription|openai|chatgpt|claude|gemini|canva|notion|perplexity|copilot|midjourney|wrtn|뤼튼|gamma|cursor/.test(text);
 }
 
 function looksForeignPayment(entry) {
@@ -859,6 +1449,7 @@ function importJson(event) {
       saveLocal({ silent: true });
       populateProjectForm();
       resetExpenseForm();
+      resetMemberForm();
       renderAll();
       activateTab("dashboard");
     } catch {
@@ -876,9 +1467,11 @@ function restoreSampleData() {
 
   state = structuredClone(sampleState);
   draftAttachments = emptyAttachments();
+  draftMemberAttachments = emptyMemberAttachments();
   saveLocal({ silent: true });
   populateProjectForm();
   resetExpenseForm();
+  resetMemberForm();
   renderAll();
   activateTab("dashboard");
 }

@@ -26,6 +26,8 @@
     <main class="app-shell">
       <nav class="tabs" aria-label="주요 화면">
         <button type="button" class="tab-button active" data-tab="dashboard">대시보드</button>
+        <button type="button" class="tab-button" data-tab="memberSubmit">회원용 제출</button>
+        <button type="button" class="tab-button" data-tab="aiUsage">AI 구독료 현황</button>
         <button type="button" class="tab-button" data-tab="entry">지출 입력</button>
         <button type="button" class="tab-button" data-tab="review">검토</button>
         <button type="button" class="tab-button" data-tab="print">최종 출력</button>
@@ -69,6 +71,88 @@
         </section>
       </section>
 
+      <section class="tab-panel" id="memberSubmitPanel">
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>회원용 AI 구독료 제출</h2>
+              <p>회원은 본인 이름, 결제 금액, 결제일, 영수증만 간단히 제출합니다.</p>
+            </div>
+          </div>
+
+          <form id="memberSubmitForm" class="expense-form">
+            <div class="form-grid">
+              <label>
+                이름
+                <input type="text" name="submitter" required autocomplete="name">
+              </label>
+              <label>
+                AI 서비스명
+                <input type="text" name="vendor" required placeholder="ChatGPT, Claude, Gemini 등">
+              </label>
+              <label>
+                결제일
+                <input type="date" name="date" required>
+              </label>
+              <label>
+                결제금액
+                <input type="number" name="amount" min="1" step="1" required>
+              </label>
+              <label class="wide-field">
+                비고
+                <textarea name="notes" rows="3" placeholder="이용 기간, 계정명, 특이사항 등"></textarea>
+              </label>
+            </div>
+
+            <fieldset class="attachment-fieldset">
+              <legend>영수증 첨부</legend>
+              <div class="attachment-grid member-attachment-grid">
+                <label class="attachment-box">
+                  <span>영수증/구매내역서</span>
+                  <input type="file" multiple required data-member-attachment-key="receiptBundle" accept="image/*,application/pdf">
+                </label>
+                <label class="attachment-box">
+                  <span>외화영수증</span>
+                  <input type="file" multiple data-member-attachment-key="foreignReceipt" accept="image/*,application/pdf">
+                </label>
+                <label class="attachment-box">
+                  <span>국내카드사원화전표</span>
+                  <input type="file" multiple data-member-attachment-key="krwCardSlip" accept="image/*,application/pdf">
+                </label>
+              </div>
+              <div class="preview-panel" id="memberPreview"></div>
+            </fieldset>
+
+            <div class="form-actions">
+              <button type="submit" class="primary-button" id="memberSubmitButton">AI 구독료 제출</button>
+              <button type="button" class="ghost-button" id="clearMemberFormButton">초기화</button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="aiUsagePanel">
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>AI 구독료 회원별·월별 현황</h2>
+              <p>직접성 경비 중 세부 유형이 AI 구독료인 건만 제출자와 결제월 기준으로 집계합니다.</p>
+            </div>
+          </div>
+          <section class="summary-grid ai-budget-summary" id="aiBudgetSummary" aria-label="AI 구독료 예산 요약"></section>
+          <div>
+            <h3 class="section-subtitle">회원별 월별 사용액</h3>
+            <div class="table-wrap">
+              <table class="dense-table">
+                <thead id="aiMonthlyHead"></thead>
+                <tbody id="aiMonthlyRows"></tbody>
+                <tfoot id="aiMonthlyFoot"></tfoot>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+
       <section class="tab-panel" id="entryPanel">
         <section class="work-section">
           <div class="section-heading">
@@ -85,6 +169,26 @@
             <label>
               동아리명
               <input type="text" name="clubName">
+            </label>
+            <label>
+              총 예산
+              <input type="number" name="totalBudget" min="0" step="1">
+            </label>
+            <label>
+              연구활동비 예산
+              <input type="number" name="researchBudget" min="0" step="1">
+            </label>
+            <label>
+              직접성 경비 예산
+              <input type="number" name="directBudget" min="0" step="1">
+            </label>
+            <label>
+              AI 구독료 배정액
+              <input type="number" name="aiSubscriptionBudget" min="0" step="1">
+            </label>
+            <label>
+              업무협의회비 예산
+              <input type="number" name="meetingBudget" min="0" step="1">
             </label>
             <label>
               학교장 성명
@@ -147,6 +251,15 @@
                   <option value="research">연구활동비</option>
                   <option value="direct">직접성 경비</option>
                   <option value="meeting">업무협의회비</option>
+                </select>
+              </label>
+              <label id="directTypeField" hidden>
+                직접성 경비 세부 유형
+                <select name="directType">
+                  <option value="ai_subscription">AI 구독료</option>
+                  <option value="book">도서</option>
+                  <option value="printing">인쇄비</option>
+                  <option value="other">기타 직접성 경비</option>
                 </select>
               </label>
               <label class="wide-field">
