@@ -39,9 +39,12 @@ export default async function handler(request, response) {
     return;
   }
 
-  const adminProfile = await getAdminProfile(adminClient, authResult.data.user.id);
+  const adminProfile = await getAdminProfile(adminClient, authResult.data.user);
   if (!adminProfile) {
-    sendJson(response, 403, { error: "관리자 권한이 필요합니다." });
+    sendJson(response, 403, {
+      error: "관리자 권한이 필요합니다.",
+      detail: "profiles에서 로그인 사용자와 연결된 활성 관리자 프로필을 찾지 못했습니다."
+    });
     return;
   }
 
@@ -83,15 +86,25 @@ export default async function handler(request, response) {
   }
 }
 
-async function getAdminProfile(client, userId) {
+async function getAdminProfile(client, user) {
   const { data, error } = await client
     .from("profiles")
     .select("id, club_id, email, name, role, active")
-    .eq("id", userId)
+    .eq("id", user.id)
     .eq("role", "admin")
     .maybeSingle();
-  if (error || !data?.club_id || data.active === false) return null;
-  return data;
+  if (!error && data?.club_id && data.active !== false) return data;
+
+  const email = user.email || "";
+  if (!email) return null;
+  const fallback = await client
+    .from("profiles")
+    .select("id, club_id, email, name, role, active")
+    .eq("email", email)
+    .eq("role", "admin")
+    .maybeSingle();
+  if (fallback.error || !fallback.data?.club_id || fallback.data.active === false) return null;
+  return fallback.data;
 }
 
 async function listMembers(client, clubId) {
