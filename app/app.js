@@ -1,8 +1,22 @@
+import {
+  createMemberAiExpense,
+  deleteMemberBudget as deleteRemoteMemberBudget,
+  fetchClubState,
+  getCurrentSession,
+  hasSupabaseConfig,
+  onAuthStateChange,
+  saveMemberBudget as saveRemoteMemberBudget,
+  signInWithPassword,
+  signOut,
+  updatePaid as updateRemotePaid
+} from "./supabaseStore.js";
+
 const STORAGE_KEY = "aiClubSettlementPrototype.v1";
 
 const DEFAULT_BUDGETS = {
   totalBudget: 2000000,
   researchBudget: 1000000,
+  trainingBudget: 0,
   directBudget: 800000,
   meetingBudget: 200000,
   aiSubscriptionBudget: 800000
@@ -12,15 +26,17 @@ const NUMERIC_PROJECT_FIELDS = new Set([
   "interest",
   "totalBudget",
   "researchBudget",
+  "trainingBudget",
   "directBudget",
   "meetingBudget",
   "aiSubscriptionBudget"
 ]);
 
 const CATEGORIES = {
-  research: { label: "연구활동비", budgetKey: "researchBudget", prefix: "1" },
-  direct: { label: "직접성 경비", budgetKey: "directBudget", prefix: "3" },
-  meeting: { label: "업무협의회비", budgetKey: "meetingBudget", prefix: "4" }
+  research: { label: "연구활동비", pptLabel: "연구 활동비", budgetKey: "researchBudget", prefix: "1" },
+  training: { label: "연수 운영비", pptLabel: "연수 운영비", budgetKey: "trainingBudget", prefix: "2" },
+  direct: { label: "직접성 경비", pptLabel: "직접성 경비", budgetKey: "directBudget", prefix: "3" },
+  meeting: { label: "업무협의회비", pptLabel: "업무 협의회비", budgetKey: "meetingBudget", prefix: "4" }
 };
 
 const DIRECT_TYPES = {
@@ -77,10 +93,17 @@ const sampleState = {
     interest: 0,
     totalBudget: DEFAULT_BUDGETS.totalBudget,
     researchBudget: DEFAULT_BUDGETS.researchBudget,
+    trainingBudget: DEFAULT_BUDGETS.trainingBudget,
     directBudget: DEFAULT_BUDGETS.directBudget,
     meetingBudget: DEFAULT_BUDGETS.meetingBudget,
     aiSubscriptionBudget: DEFAULT_BUDGETS.aiSubscriptionBudget
   },
+  aiSubscriptionMembers: [
+    { name: "김유하", limit: 140000, notes: "7-10월 ChatGPT 구독 예상" },
+    { name: "이서연", limit: 90000, notes: "Claude Pro 격월 사용" },
+    { name: "박민준", limit: 90000, notes: "Gemini Advanced 사용" },
+    { name: "최하늘", limit: 60000, notes: "Canva Pro 사용" }
+  ],
   entries: [
     {
       id: "EXP-001",
@@ -100,6 +123,8 @@ const sampleState = {
       unitPrice: 30000,
       paymentMethod: "card",
       evidenceNo: "3-01",
+      paid: true,
+      paidDate: "2026-07-15",
       notes: "7월 구독료 샘플",
       attachments: sampleAiAttachments("openai-2026-07")
     },
@@ -121,6 +146,8 @@ const sampleState = {
       unitPrice: 30000,
       paymentMethod: "card",
       evidenceNo: "3-02",
+      paid: true,
+      paidDate: "2026-08-15",
       notes: "8월 구독료 샘플",
       attachments: sampleAiAttachments("openai-2026-08")
     },
@@ -142,6 +169,8 @@ const sampleState = {
       unitPrice: 30000,
       paymentMethod: "card",
       evidenceNo: "3-03",
+      paid: false,
+      paidDate: "",
       notes: "9월 구독료 샘플",
       attachments: sampleAiAttachments("openai-2026-09")
     },
@@ -163,6 +192,8 @@ const sampleState = {
       unitPrice: 30000,
       paymentMethod: "card",
       evidenceNo: "3-04",
+      paid: false,
+      paidDate: "",
       notes: "10월 구독료 샘플",
       attachments: sampleAiAttachments("openai-2026-10")
     },
@@ -184,6 +215,8 @@ const sampleState = {
       unitPrice: 22000,
       paymentMethod: "card",
       evidenceNo: "3-05",
+      paid: true,
+      paidDate: "2026-07-20",
       notes: "7월 구독료 샘플",
       attachments: sampleAiAttachments("claude-2026-07")
     },
@@ -205,6 +238,8 @@ const sampleState = {
       unitPrice: 22000,
       paymentMethod: "card",
       evidenceNo: "3-06",
+      paid: false,
+      paidDate: "",
       notes: "9월 구독료 샘플",
       attachments: sampleAiAttachments("claude-2026-09")
     },
@@ -226,6 +261,8 @@ const sampleState = {
       unitPrice: 29000,
       paymentMethod: "card",
       evidenceNo: "3-07",
+      paid: true,
+      paidDate: "2026-08-28",
       notes: "8월 구독료 샘플",
       attachments: sampleAiAttachments("gemini-2026-08")
     },
@@ -247,6 +284,8 @@ const sampleState = {
       unitPrice: 29000,
       paymentMethod: "card",
       evidenceNo: "3-08",
+      paid: false,
+      paidDate: "",
       notes: "10월 구독료 샘플",
       attachments: sampleAiAttachments("gemini-2026-10")
     },
@@ -268,6 +307,8 @@ const sampleState = {
       unitPrice: 18000,
       paymentMethod: "card",
       evidenceNo: "3-09",
+      paid: false,
+      paidDate: "",
       notes: "9월 구독료 샘플",
       attachments: sampleAiAttachments("canva-2026-09")
     }
@@ -277,6 +318,9 @@ const sampleState = {
 let state = loadInitialState();
 let draftAttachments = emptyAttachments();
 let draftMemberAttachments = emptyMemberAttachments();
+let selectedEvidenceEntryId = "";
+let authState = { session: null, user: null, profile: null };
+let isRemoteMode = false;
 
 const els = {};
 
@@ -287,30 +331,47 @@ document.addEventListener("DOMContentLoaded", () => {
   populateProjectForm();
   syncDirectTypeField();
   renderAll();
+  initializeAuth();
 });
 
 function bindElements() {
   els.summaryGrid = document.querySelector("#summaryGrid");
+  els.authPanel = document.querySelector("#authPanel");
+  els.loginForm = document.querySelector("#loginForm");
+  els.authMessage = document.querySelector("#authMessage");
+  els.sessionBar = document.querySelector("#sessionBar");
+  els.sessionName = document.querySelector("#sessionName");
+  els.sessionRole = document.querySelector("#sessionRole");
+  els.headerActions = document.querySelector(".header-actions");
   els.budgetRows = document.querySelector("#budgetRows");
   els.warningList = document.querySelector("#warningList");
   els.projectForm = document.querySelector("#projectForm");
   els.expenseForm = document.querySelector("#expenseForm");
   els.memberSubmitForm = document.querySelector("#memberSubmitForm");
+  els.memberBudgetForm = document.querySelector("#memberBudgetForm");
+  els.memberBudgetRows = document.querySelector("#memberBudgetRows");
+  els.memberBudgetSummary = document.querySelector("#memberBudgetSummary");
+  els.memberBudgetHint = document.querySelector("#memberBudgetHint");
+  els.myBudgetSummary = document.querySelector("#myBudgetSummary");
+  els.myExpenseRows = document.querySelector("#myExpenseRows");
   els.directTypeField = document.querySelector("#directTypeField");
   els.attachmentInputs = document.querySelector("#attachmentInputs");
   els.currentPreview = document.querySelector("#currentPreview");
   els.memberPreview = document.querySelector("#memberPreview");
   els.expenseRows = document.querySelector("#expenseRows");
+  els.evidencePanel = document.querySelector("#evidencePanel");
   els.aiBudgetSummary = document.querySelector("#aiBudgetSummary");
   els.aiMonthlyHead = document.querySelector("#aiMonthlyHead");
   els.aiMonthlyRows = document.querySelector("#aiMonthlyRows");
   els.aiMonthlyFoot = document.querySelector("#aiMonthlyFoot");
   els.printDocument = document.querySelector("#printDocument");
+  els.pptxCopyText = document.querySelector("#pptxCopyText");
   els.submitterFilter = document.querySelector("#submitterFilter");
   els.categoryFilter = document.querySelector("#categoryFilter");
   els.missingFilter = document.querySelector("#missingFilter");
   els.submitExpenseButton = document.querySelector("#submitExpenseButton");
   els.memberSubmitButton = document.querySelector("#memberSubmitButton");
+  els.memberBudgetSubmitButton = document.querySelector("#memberBudgetSubmitButton");
 }
 
 function bindEvents() {
@@ -322,11 +383,14 @@ function bindEvents() {
     saveLocal();
     flashButton(document.querySelector("#saveLocalButton"), "저장됨");
   });
+  els.loginForm.addEventListener("submit", handleLogin);
+  document.querySelector("#logoutButton").addEventListener("click", handleLogout);
 
   document.querySelector("#exportButton").addEventListener("click", exportJson);
   document.querySelector("#importInput").addEventListener("change", importJson);
   document.querySelector("#printButton").addEventListener("click", printDocument);
   document.querySelector("#printButtonSecondary").addEventListener("click", printDocument);
+  document.querySelector("#copyPptxButton").addEventListener("click", copyPptxText);
   document.querySelector("#clearFormButton").addEventListener("click", resetExpenseForm);
   document.querySelector("#sampleButton").addEventListener("click", restoreSampleData);
 
@@ -344,7 +408,11 @@ function bindEvents() {
   els.expenseForm.addEventListener("submit", handleExpenseSubmit);
   els.expenseForm.elements.category.addEventListener("change", syncDirectTypeField);
   els.memberSubmitForm.addEventListener("submit", handleMemberSubmit);
+  els.memberSubmitForm.elements.submitter.addEventListener("input", renderMemberBudgetHint);
+  els.memberSubmitForm.elements.amount.addEventListener("input", renderMemberBudgetHint);
   document.querySelector("#clearMemberFormButton").addEventListener("click", resetMemberForm);
+  els.memberBudgetForm.addEventListener("submit", handleMemberBudgetSubmit);
+  document.querySelector("#clearMemberBudgetButton").addEventListener("click", resetMemberBudgetForm);
   document.querySelectorAll("[data-member-attachment-key]").forEach((input) => {
     input.addEventListener("change", handleMemberAttachmentChange);
   });
@@ -414,6 +482,7 @@ function shouldLoadSampleFromUrl() {
 function normalizeState(raw) {
   const normalized = {
     project: { ...sampleState.project, ...(raw.project || {}) },
+    aiSubscriptionMembers: normalizeAiSubscriptionMembers(raw.aiSubscriptionMembers || raw.memberBudgets || []),
     entries: Array.isArray(raw.entries) ? raw.entries : []
   };
 
@@ -438,12 +507,31 @@ function normalizeState(raw) {
       unitPrice: toNumber(entry.unitPrice),
       paymentMethod: entry.paymentMethod || "card",
       evidenceNo: entry.evidenceNo || "",
+      paid: Boolean(entry.paid),
+      paidDate: entry.paidDate || "",
       notes: entry.notes || "",
       attachments: { ...emptyAttachments(), ...(entry.attachments || {}) }
     };
   });
 
   return normalized;
+}
+
+function normalizeAiSubscriptionMembers(members) {
+  if (!Array.isArray(members)) return [];
+  const map = new Map();
+
+  members.forEach((member) => {
+    const name = normalizeSubmitterName(member.name || member.submitter);
+    if (!name || name === "미입력") return;
+    map.set(name, {
+      name,
+      limit: Math.max(0, toNumber(member.limit ?? member.aiSubscriptionLimit)),
+      notes: String(member.notes || "").trim()
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
 }
 
 function emptyAttachments() {
@@ -489,12 +577,150 @@ function populateProjectForm() {
 }
 
 function renderAll() {
+  renderAuthUi();
+  syncMemberIdentityFields();
   renderSummary();
   renderBudgetRows();
   renderAiSubscriptionSummary();
+  renderMemberBudgetManager();
+  renderMemberBudgetHint();
   renderWarnings();
   renderExpenseRows();
+  renderEvidencePanel();
+  renderPptxCopyText();
   renderPrintDocument();
+  renderMyStatus();
+}
+
+function syncMemberIdentityFields() {
+  if (!els.memberSubmitForm?.elements.submitter) return;
+
+  const submitterField = els.memberSubmitForm.elements.submitter;
+  const isLoggedInMember = Boolean(isRemoteMode && authState.profile?.role === "member");
+  submitterField.readOnly = isLoggedInMember;
+
+  if (isLoggedInMember) {
+    submitterField.value = authState.profile.name || "";
+  }
+}
+
+async function initializeAuth() {
+  if (!hasSupabaseConfig) {
+    isRemoteMode = false;
+    renderAll();
+    return;
+  }
+
+  try {
+    authState = await getCurrentSession();
+    isRemoteMode = Boolean(authState.session);
+    if (authState.profile) {
+      await loadRemoteState();
+    }
+    onAuthStateChange(async (nextAuthState) => {
+      authState = nextAuthState;
+      isRemoteMode = Boolean(authState.session);
+      if (authState.profile) {
+        await loadRemoteState();
+      }
+      renderAll();
+      activateDefaultTabForRole();
+    });
+  } catch (error) {
+    console.error(error);
+    els.authMessage.textContent = formatAuthError(error, "Supabase 로그인 상태를 확인하지 못했습니다.");
+  }
+
+  renderAll();
+  activateDefaultTabForRole();
+}
+
+async function loadRemoteState() {
+  state = normalizeState(await fetchClubState(authState.profile));
+  populateProjectForm();
+  resetExpenseForm();
+  resetMemberForm();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  els.authMessage.textContent = "";
+  const data = new FormData(event.currentTarget);
+
+  try {
+    authState = await signInWithPassword(data.get("email"), data.get("password"));
+    isRemoteMode = true;
+    await loadRemoteState();
+    renderAll();
+    activateDefaultTabForRole();
+  } catch (error) {
+    console.error(error);
+    els.authMessage.textContent = formatAuthError(error, "로그인에 실패했습니다.");
+  }
+}
+
+function formatAuthError(error, fallback) {
+  const message = error?.message || "";
+  if (!message) return fallback;
+  if (message.includes("Email not confirmed")) {
+    return `${fallback} Supabase Auth에서 해당 사용자의 이메일 확인 상태를 확인하세요. (${message})`;
+  }
+  if (message.includes("Invalid login credentials")) {
+    return `${fallback} 이메일 또는 비밀번호가 맞지 않습니다. (${message})`;
+  }
+  if (message.includes("profiles")) {
+    return message;
+  }
+  return `${fallback} (${message})`;
+}
+
+async function handleLogout() {
+  await signOut();
+  authState = { session: null, user: null, profile: null };
+  isRemoteMode = false;
+  renderAll();
+}
+
+function renderAuthUi() {
+  const configured = hasSupabaseConfig;
+  const loggedIn = Boolean(authState.session && authState.profile);
+  const isMember = Boolean(configured && loggedIn && authState.profile.role === "member");
+
+  document.body.classList.toggle("member-mode", isMember);
+  if (els.headerActions) {
+    els.headerActions.hidden = isMember;
+  }
+
+  els.authPanel.hidden = !configured || loggedIn;
+  els.sessionBar.hidden = !configured || !loggedIn;
+
+  if (loggedIn) {
+    els.sessionName.textContent = authState.profile.name || authState.user.email || "";
+    els.sessionRole.textContent = authState.profile.role === "admin" ? "관리자" : "선생님";
+  }
+
+  document.querySelectorAll("[data-role]").forEach((el) => {
+    const role = el.dataset.role;
+    const show = !configured
+      || role === "all"
+      || (loggedIn && role === authState.profile.role);
+    el.hidden = !show;
+  });
+
+  if (configured && !loggedIn) {
+    document.querySelector(".tabs").hidden = true;
+    document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.remove("active"));
+  } else {
+    document.querySelector(".tabs").hidden = false;
+  }
+}
+
+function activateDefaultTabForRole() {
+  if (hasSupabaseConfig && !authState.session) return;
+  const defaultTab = authState.profile?.role === "member" ? "memberSubmit" : "dashboard";
+  const current = document.querySelector(".tab-button.active");
+  const activePanel = document.querySelector(".tab-panel.active");
+  if (!current || current.hidden || !activePanel) activateTab(defaultTab);
 }
 
 function activateTab(tabName) {
@@ -518,19 +744,29 @@ function getCategoryBudget(categoryKey) {
 
 function getTotals() {
   const categoryTotals = Object.fromEntries(Object.keys(CATEGORIES).map((key) => [key, 0]));
+  const categoryPaidTotals = Object.fromEntries(Object.keys(CATEGORIES).map((key) => [key, 0]));
   state.entries.forEach((entry) => {
     categoryTotals[entry.category] += toNumber(entry.amount);
+    if (entry.paid) {
+      categoryPaidTotals[entry.category] += toNumber(entry.amount);
+    }
   });
 
   const totalBudget = getProjectBudget("totalBudget");
   const spent = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
+  const paid = Object.values(categoryPaidTotals).reduce((sum, amount) => sum + amount, 0);
+  const unpaid = spent - paid;
   const missingCount = state.entries.filter((entry) => getEntryWarnings(entry).length > 0).length;
 
   return {
     categoryTotals,
+    categoryPaidTotals,
     totalBudget,
     spent,
+    paid,
+    unpaid,
     remaining: totalBudget - spent,
+    cashRemaining: totalBudget - paid,
     useRate: totalBudget ? Math.round((spent / totalBudget) * 1000) / 10 : 0,
     missingCount
   };
@@ -538,20 +774,48 @@ function getTotals() {
 
 function renderSummary() {
   const totals = getTotals();
-  const metrics = [
-    ["총 예산", formatWon(totals.totalBudget)],
-    ["사용액", formatWon(totals.spent)],
-    ["잔액", formatWon(totals.remaining)],
-    ["사용률", `${totals.useRate}%`],
-    ["경고 건수", `${totals.missingCount}건`, totals.missingCount ? "warning" : ""]
+  const groups = [
+    {
+      title: "정산 기준",
+      className: "settlement-group",
+      metrics: [
+        ["총 예산", formatWon(totals.totalBudget)],
+        ["사용액", formatWon(totals.spent)],
+        ["정산 잔액", formatWon(totals.remaining)]
+      ]
+    },
+    {
+      title: "지급 기준",
+      className: "payment-group",
+      metrics: [
+        ["지급완료", formatWon(totals.paid)],
+        ["미지급", formatWon(totals.unpaid), totals.unpaid ? "warning" : ""],
+        ["실지급 잔액", formatWon(totals.cashRemaining)]
+      ]
+    },
+    {
+      title: "점검",
+      className: "check-group",
+      metrics: [
+        ["사용률", `${totals.useRate}%`],
+        ["경고 건수", `${totals.missingCount}건`, totals.missingCount ? "warning" : ""]
+      ]
+    }
   ];
 
-  els.summaryGrid.innerHTML = metrics
-    .map(([label, value, className = ""]) => `
-      <div class="metric ${className}">
-        <span>${label}</span>
-        <strong>${value}</strong>
-      </div>
+  els.summaryGrid.innerHTML = groups
+    .map((group) => `
+      <section class="metric-group ${group.className}">
+        <h3>${group.title}</h3>
+        <div class="metric-group-grid">
+          ${group.metrics.map(([label, value, className = ""]) => `
+            <div class="metric ${className}">
+              <span>${label}</span>
+              <strong>${value}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </section>
     `)
     .join("");
 }
@@ -561,6 +825,8 @@ function renderBudgetRows() {
   els.budgetRows.innerHTML = Object.entries(CATEGORIES)
     .map(([key, category]) => {
       const spent = totals.categoryTotals[key];
+      const paid = totals.categoryPaidTotals[key];
+      const unpaid = spent - paid;
       const limit = getCategoryBudget(key);
       const remaining = limit - spent;
       const denominator = limit || totals.totalBudget;
@@ -579,6 +845,8 @@ function renderBudgetRows() {
           <td><strong>${category.label}</strong></td>
           <td class="num">${formatWon(limit)}</td>
           <td class="num">${formatWon(spent)}</td>
+          <td class="num">${formatWon(paid)}</td>
+          <td class="num">${formatWon(unpaid)}</td>
           <td class="num">${formatWon(remaining)}</td>
           <td>
             <div class="progress-track"><div class="progress-bar ${barClass}" style="width:${Math.min(rate, 100)}%"></div></div>
@@ -627,9 +895,15 @@ function getAiSubscriptionSummary() {
     .sort((a, b) => a.submitter.localeCompare(b.submitter, "ko-KR"));
   const months = Array.from(monthSet).sort();
   const total = entries.reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const paid = entries
+    .filter((entry) => entry.paid)
+    .reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const unpaid = total - paid;
   const budget = getProjectBudget("aiSubscriptionBudget");
+  const memberRows = getAiMemberBudgetRows(submitters);
+  const memberAllocated = getAiMemberAllocatedTotal();
 
-  return { entries, submitters, months, monthTotals, total, budget, remaining: budget - total };
+  return { entries, submitters, months, monthTotals, total, paid, unpaid, budget, remaining: budget - total, memberRows, memberAllocated };
 }
 
 function renderAiSubscriptionSummary() {
@@ -640,12 +914,15 @@ function renderAiSubscriptionSummary() {
     els.aiMonthlyHead.innerHTML = `
       <tr>
         <th>제출자</th>
+        <th class="num">가능금액</th>
         <th class="num">합계</th>
+        <th class="num">잔액</th>
+        <th>상태</th>
       </tr>
     `;
     els.aiMonthlyRows.innerHTML = `
       <tr>
-        <td colspan="2" class="muted">월별로 표시할 AI 구독료가 없습니다.</td>
+        <td colspan="5" class="muted">월별로 표시할 AI 구독료가 없습니다.</td>
       </tr>
     `;
     els.aiMonthlyFoot.innerHTML = renderAiMonthlyFoot(summary);
@@ -655,16 +932,24 @@ function renderAiSubscriptionSummary() {
   els.aiMonthlyHead.innerHTML = `
     <tr>
       <th>제출자</th>
+      <th class="num">가능금액</th>
       ${summary.months.map((month) => `<th class="num">${escapeHtml(formatMonthLabel(month))}</th>`).join("")}
       <th class="num">합계</th>
+      <th class="num">잔액</th>
+      <th>상태</th>
     </tr>
   `;
 
-  els.aiMonthlyRows.innerHTML = summary.submitters.map((row) => `
+  els.aiMonthlyRows.innerHTML = summary.memberRows
+    .filter((row) => row.used > 0)
+    .map((row) => `
     <tr>
-      <td>${escapeHtml(row.submitter)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td class="num">${row.hasLimit ? formatWon(row.limit) : "-"}</td>
       ${summary.months.map((month) => `<td class="num">${formatWon(row.monthlyTotals[month] || 0)}</td>`).join("")}
-      <td class="num"><strong>${formatWon(row.amount)}</strong></td>
+      <td class="num"><strong>${formatWon(row.used)}</strong></td>
+      <td class="num ${row.over ? "danger-text" : ""}">${row.hasLimit ? formatWon(row.remaining) : "-"}</td>
+      <td>${renderBudgetStatus(row)}</td>
     </tr>
   `).join("");
   els.aiMonthlyFoot.innerHTML = renderAiMonthlyFoot(summary);
@@ -675,7 +960,9 @@ function renderAiBudgetSummary(summary) {
   const metrics = [
     ["AI 구독료 배정액", formatWon(summary.budget)],
     ["AI 구독료 사용액", formatWon(summary.total)],
-    ["사용가능 잔액", formatWon(summary.remaining), remainingClass]
+    ["사용가능 잔액", formatWon(summary.remaining), remainingClass],
+    ["지급완료", formatWon(summary.paid)],
+    ["미지급", formatWon(summary.unpaid), summary.unpaid ? "warning" : ""]
   ];
 
   els.aiBudgetSummary.innerHTML = metrics
@@ -692,21 +979,313 @@ function renderAiMonthlyFoot(summary) {
   const monthTotalCells = summary.months
     .map((month) => `<td class="num">${formatWon(summary.monthTotals[month] || 0)}</td>`)
     .join("");
-  const remainingSpacer = summary.months.length ? `<td colspan="${summary.months.length}"></td>` : "";
+  const remainingSpacer = `<td colspan="${summary.months.length + 2}"></td>`;
   const remainingClass = summary.remaining < 0 ? "danger-text" : "";
 
   return `
     <tr class="total-row">
       <th>전체 합계</th>
+      <td class="num">${formatWon(summary.memberAllocated)}</td>
       ${monthTotalCells}
       <td class="num"><strong>${formatWon(summary.total)}</strong></td>
+      <td class="num ${remainingClass}">${formatWon(summary.budget - summary.total)}</td>
+      <td></td>
     </tr>
     <tr class="balance-row">
       <th>사용가능 잔액</th>
       ${remainingSpacer}
       <td class="num ${remainingClass}"><strong>${formatWon(summary.remaining)}</strong></td>
+      <td></td>
     </tr>
   `;
+}
+
+function getAiMemberBudgetRows(submitterRows = []) {
+  const memberMap = new Map();
+
+  state.aiSubscriptionMembers.forEach((member) => {
+    const name = normalizeSubmitterName(member.name);
+    memberMap.set(name, {
+      name,
+      limit: toNumber(member.limit),
+      notes: member.notes || "",
+      hasLimit: true,
+      used: 0,
+      monthlyTotals: {},
+      vendors: new Set()
+    });
+  });
+
+  submitterRows.forEach((row) => {
+    const name = normalizeSubmitterName(row.submitter);
+    if (!memberMap.has(name)) {
+      memberMap.set(name, {
+        name,
+        limit: 0,
+        notes: "",
+        hasLimit: false,
+        used: 0,
+        monthlyTotals: {},
+        vendors: new Set()
+      });
+    }
+
+    const member = memberMap.get(name);
+    member.used = row.amount;
+    member.monthlyTotals = row.monthlyTotals;
+    member.vendors = row.vendors;
+  });
+
+  return Array.from(memberMap.values())
+    .map((row) => {
+      const remaining = row.limit - row.used;
+      return {
+        ...row,
+        remaining,
+        over: row.hasLimit && remaining < 0
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "ko-KR"));
+}
+
+function getAiMemberAllocatedTotal() {
+  return state.aiSubscriptionMembers.reduce((sum, member) => sum + toNumber(member.limit), 0);
+}
+
+function getMemberBudget(name) {
+  const normalized = normalizeSubmitterName(name);
+  return state.aiSubscriptionMembers.find((member) => normalizeSubmitterName(member.name) === normalized);
+}
+
+function getMemberAiUsage(name) {
+  const normalized = normalizeSubmitterName(name);
+  return state.entries
+    .filter((entry) => isAiSubscriptionEntry(entry) && normalizeSubmitterName(entry.submitter) === normalized)
+    .reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+}
+
+function getMemberBudgetStatus(name, pendingAmount = 0) {
+  const member = getMemberBudget(name);
+  const used = getMemberAiUsage(name);
+  const hasLimit = Boolean(member);
+  const limit = member ? toNumber(member.limit) : 0;
+  const remaining = limit - used;
+  const projectedRemaining = limit - used - toNumber(pendingAmount);
+
+  return {
+    name: normalizeSubmitterName(name),
+    hasLimit,
+    limit,
+    used,
+    remaining,
+    over: hasLimit && remaining < 0,
+    projectedRemaining,
+    projectedOver: hasLimit && projectedRemaining < 0
+  };
+}
+
+function renderBudgetStatus(row) {
+  if (!row.hasLimit) return `<span class="status-pill warn">배정 미설정</span>`;
+  if (row.over) return `<span class="status-pill danger">초과</span>`;
+  if (row.remaining === 0) return `<span class="status-pill warn">잔액 0원</span>`;
+  return `<span class="status-pill ok">정상</span>`;
+}
+
+async function handleMemberBudgetSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const name = normalizeSubmitterName(data.get("name"));
+  const originalName = normalizeSubmitterName(data.get("originalName"));
+  const limit = Math.max(0, toNumber(data.get("limit")));
+  const notes = String(data.get("notes") || "").trim();
+
+  if (!name || name === "미입력") {
+    alert("회원 이름을 입력하세요.");
+    return;
+  }
+
+  const otherAllocated = state.aiSubscriptionMembers
+    .filter((member) => normalizeSubmitterName(member.name) !== originalName && normalizeSubmitterName(member.name) !== name)
+    .reduce((sum, member) => sum + toNumber(member.limit), 0);
+  const aiBudget = getProjectBudget("aiSubscriptionBudget");
+  if (otherAllocated + limit > aiBudget) {
+    alert(`회원별 가능금액 합계가 AI 구독료 배정액 ${formatWon(aiBudget)}을 넘을 수 없습니다.`);
+    return;
+  }
+
+  state.aiSubscriptionMembers = state.aiSubscriptionMembers
+    .filter((member) => normalizeSubmitterName(member.name) !== originalName && normalizeSubmitterName(member.name) !== name);
+  state.aiSubscriptionMembers.push({ name, limit, notes });
+  state.aiSubscriptionMembers = normalizeAiSubscriptionMembers(state.aiSubscriptionMembers);
+
+  if (isRemoteMode) {
+    await saveRemoteMemberBudget(authState.profile, { name, limit, notes });
+    await loadRemoteState();
+  }
+  saveLocal({ silent: true });
+  resetMemberBudgetForm();
+  renderAll();
+}
+
+function resetMemberBudgetForm() {
+  els.memberBudgetForm.reset();
+  els.memberBudgetForm.elements.originalName.value = "";
+  els.memberBudgetSubmitButton.textContent = "배정 저장";
+}
+
+window.startMemberBudget = function startMemberBudget(name) {
+  resetMemberBudgetForm();
+  els.memberBudgetForm.elements.name.value = name;
+  els.memberBudgetForm.elements.limit.focus();
+};
+
+window.editMemberBudget = function editMemberBudget(name) {
+  const member = getMemberBudget(name);
+  if (!member) return;
+
+  els.memberBudgetForm.elements.originalName.value = member.name;
+  els.memberBudgetForm.elements.name.value = member.name;
+  els.memberBudgetForm.elements.limit.value = member.limit;
+  els.memberBudgetForm.elements.notes.value = member.notes || "";
+  els.memberBudgetSubmitButton.textContent = "배정 수정";
+  els.memberBudgetForm.elements.limit.focus();
+};
+
+window.deleteMemberBudget = async function deleteMemberBudget(name) {
+  const ok = confirm(`${name} 선생님의 AI 구독료 가능금액 배정을 삭제할까요?`);
+  if (!ok) return;
+
+  if (isRemoteMode) {
+    await deleteRemoteMemberBudget(authState.profile, name);
+    await loadRemoteState();
+  } else {
+    state.aiSubscriptionMembers = state.aiSubscriptionMembers
+      .filter((member) => normalizeSubmitterName(member.name) !== normalizeSubmitterName(name));
+  }
+  saveLocal({ silent: true });
+  resetMemberBudgetForm();
+  renderAll();
+};
+
+function renderMemberBudgetManager() {
+  const summary = getAiSubscriptionSummary();
+  const overAllocated = summary.memberAllocated > summary.budget;
+  const remaining = summary.budget - summary.memberAllocated;
+
+  els.memberBudgetSummary.innerHTML = `
+    <div class="${overAllocated ? "warning-item" : "empty-state"}">
+      <strong>회원별 배정 합계 ${formatWon(summary.memberAllocated)} / AI 구독료 배정액 ${formatWon(summary.budget)}</strong>
+      <span class="${overAllocated ? "danger-text" : "muted"}">배정 가능 잔액 ${formatWon(remaining)}</span>
+    </div>
+  `;
+
+  if (!summary.memberRows.length) {
+    els.memberBudgetRows.innerHTML = `
+      <tr>
+        <td colspan="7" class="muted">아직 설정된 회원별 가능금액이 없습니다.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  els.memberBudgetRows.innerHTML = summary.memberRows.map((row) => `
+    <tr>
+      <td><strong>${escapeHtml(row.name)}</strong></td>
+      <td class="num">${row.hasLimit ? formatWon(row.limit) : `<span class="warning-pill">미설정</span>`}</td>
+      <td class="num">${formatWon(row.used)}</td>
+      <td class="num ${row.over ? "danger-text" : ""}">${row.hasLimit ? formatWon(row.remaining) : "-"}</td>
+      <td>${renderBudgetStatus(row)}</td>
+      <td>${escapeHtml(row.notes || "")}</td>
+      <td>
+        <div class="row-actions">
+          ${row.hasLimit ? `<button type="button" class="small-button" onclick="editMemberBudget('${escapeJsArg(row.name)}')">수정</button>` : `<button type="button" class="small-button" onclick="startMemberBudget('${escapeJsArg(row.name)}')">배정</button>`}
+          ${row.hasLimit ? `<button type="button" class="small-button" onclick="deleteMemberBudget('${escapeJsArg(row.name)}')">삭제</button>` : ""}
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderMemberBudgetHint() {
+  if (!els.memberBudgetHint || !els.memberSubmitForm) return;
+
+  const name = normalizeSubmitterName(els.memberSubmitForm.elements.submitter.value);
+  const pendingAmount = toNumber(els.memberSubmitForm.elements.amount.value);
+  if (!name || name === "미입력") {
+    els.memberBudgetHint.innerHTML = `<div class="empty-state">이름을 입력하면 AI 구독료 가능금액과 남은 금액을 확인할 수 있습니다.</div>`;
+    return;
+  }
+
+  const status = getMemberBudgetStatus(name, pendingAmount);
+  const overText = status.projectedOver
+    ? `<span class="danger-text">이번 결제까지 포함하면 ${formatWon(Math.abs(status.projectedRemaining))} 초과합니다. 저장은 가능하지만 관리자 확인이 필요합니다.</span>`
+    : `<span class="muted">이번 결제 후 예상 잔액 ${status.hasLimit ? formatWon(status.projectedRemaining) : "-"}</span>`;
+
+  els.memberBudgetHint.innerHTML = `
+    <div class="${status.projectedOver || !status.hasLimit ? "warning-item" : "empty-state"}">
+      <strong>${escapeHtml(name)} 선생님 AI 구독료 현황</strong>
+      <span>
+        가능금액 ${status.hasLimit ? formatWon(status.limit) : "미설정"} ·
+        기존 사용액 ${formatWon(status.used)} ·
+        현재 잔액 ${status.hasLimit ? formatWon(status.remaining) : "-"}
+      </span>
+      <br>${overText}
+    </div>
+  `;
+}
+
+function renderMyStatus() {
+  if (!els.myBudgetSummary || !els.myExpenseRows) return;
+
+  const name = authState.profile?.name || els.memberSubmitForm?.elements.submitter?.value || "";
+  const normalizedName = normalizeSubmitterName(name);
+  const rows = isRemoteMode
+    ? state.entries
+    : state.entries.filter((entry) => !name || normalizeSubmitterName(entry.submitter) === normalizedName);
+  const aiRows = rows.filter(isAiSubscriptionEntry);
+  const used = aiRows.reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const paid = rows.filter((entry) => entry.paid).reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const total = rows.reduce((sum, entry) => sum + toNumber(entry.amount), 0);
+  const unpaid = total - paid;
+  const budget = getMemberBudget(name);
+  const limit = budget ? toNumber(budget.limit) : 0;
+  const remaining = budget ? limit - used : 0;
+
+  els.myBudgetSummary.innerHTML = [
+    ["AI 구독료 가능금액", budget ? formatWon(limit) : "미설정", budget ? "" : "warning"],
+    ["AI 구독료 사용액", formatWon(used)],
+    ["AI 구독료 잔액", budget ? formatWon(remaining) : "-", remaining < 0 ? "danger" : ""],
+    ["지급완료", formatWon(paid)],
+    ["미지급", formatWon(unpaid), unpaid ? "warning" : ""]
+  ].map(([label, value, className = ""]) => `
+    <div class="metric ${className}">
+      <span>${label}</span>
+      <strong>${value}</strong>
+    </div>
+  `).join("");
+
+  if (!rows.length) {
+    els.myExpenseRows.innerHTML = `<tr><td colspan="5" class="muted">아직 제출한 내역이 없습니다.</td></tr>`;
+    return;
+  }
+
+  els.myExpenseRows.innerHTML = rows.map((entry) => {
+    const fileNames = ATTACHMENTS
+      .flatMap((attachment) => (entry.attachments[attachment.key] || []).map((file) => file.name))
+      .join(", ");
+    return `
+      <tr>
+        <td>${escapeHtml(entry.date || "-")}</td>
+        <td>
+          <strong>${escapeHtml(entry.vendor || entry.description || "-")}</strong>
+          <div class="muted">${CATEGORIES[entry.category]?.label || ""}</div>
+        </td>
+        <td class="num">${formatWon(entry.amount)}</td>
+        <td>${fileNames ? escapeHtml(fileNames) : `<span class="warning-pill">첨부 없음</span>`}</td>
+        <td>${entry.paid ? `<span class="status-pill ok">지급완료</span><div class="muted">${escapeHtml(entry.paidDate || "")}</div>` : `<span class="status-pill warn">미지급</span>`}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderWarnings() {
@@ -730,10 +1309,17 @@ function renderWarnings() {
 
   const directBudget = getCategoryBudget("direct");
   const aiSubscriptionBudget = getProjectBudget("aiSubscriptionBudget");
+  const memberAllocated = getAiMemberAllocatedTotal();
   if (aiSubscriptionBudget > directBudget) {
     warnings.push({
       title: "AI 구독료 배정액 확인",
       detail: `AI 구독료 배정액 ${formatWon(aiSubscriptionBudget)}이 직접성 경비 예산 ${formatWon(directBudget)}보다 큽니다.`
+    });
+  }
+  if (memberAllocated > aiSubscriptionBudget) {
+    warnings.push({
+      title: "회원별 AI 구독료 가능금액 초과 배정",
+      detail: `회원별 가능금액 합계 ${formatWon(memberAllocated)}이 AI 구독료 배정액 ${formatWon(aiSubscriptionBudget)}을 초과했습니다.`
     });
   }
 
@@ -755,6 +1341,21 @@ function renderWarnings() {
         detail: message
       });
     });
+  });
+
+  getAiMemberBudgetRows(getAiSubscriptionSummary().submitters).forEach((row) => {
+    if (!row.hasLimit && row.used > 0) {
+      warnings.push({
+        title: `${row.name} AI 구독료 가능금액 미설정`,
+        detail: `${row.name} 선생님의 AI 구독료 사용액 ${formatWon(row.used)}이 있지만 회원별 가능금액이 설정되지 않았습니다.`
+      });
+    }
+    if (row.over) {
+      warnings.push({
+        title: `${row.name} AI 구독료 가능금액 초과`,
+        detail: `${row.name} 선생님의 사용액 ${formatWon(row.used)}이 가능금액 ${formatWon(row.limit)}을 ${formatWon(Math.abs(row.remaining))} 초과했습니다.`
+      });
+    }
   });
 
   if (!warnings.length) {
@@ -787,7 +1388,7 @@ function renderExpenseRows() {
   if (!rows.length) {
     els.expenseRows.innerHTML = `
       <tr>
-        <td colspan="9" class="muted">표시할 지출 내역이 없습니다.</td>
+        <td colspan="10" class="muted">표시할 지출 내역이 없습니다.</td>
       </tr>
     `;
     return;
@@ -821,7 +1422,16 @@ function renderExpenseRows() {
         </td>
         <td>${warnings.length ? `<span class="status-pill warn">확인 필요</span>` : `<span class="status-pill ok">정상</span>`}</td>
         <td>
+          ${entry.paid
+            ? `<span class="status-pill ok">지급완료</span><div class="muted">${escapeHtml(entry.paidDate || "")}</div>`
+            : `<span class="status-pill warn">미지급</span>`}
+          <div class="row-actions payment-actions">
+            <button type="button" class="small-button" onclick="togglePaid('${entry.id}')">${entry.paid ? "지급 취소" : "지급 완료"}</button>
+          </div>
+        </td>
+        <td>
           <div class="row-actions">
+            <button type="button" class="small-button" onclick="viewEvidence('${entry.id}')">증빙 보기</button>
             <button type="button" class="small-button" onclick="editEntry('${entry.id}')">수정</button>
             <button type="button" class="small-button" onclick="deleteEntry('${entry.id}')">삭제</button>
           </div>
@@ -848,7 +1458,9 @@ function renderPrintDocument() {
           <tr><th>학교 대표 전화 번호</th><td>${escapeHtml(project.schoolPhone || "")}</td><th>휴대전화</th><td>${escapeHtml(project.managerPhone || "")}</td></tr>
           <tr><th>이메일 주소</th><td colspan="3">${escapeHtml(project.managerEmail || "")}</td></tr>
           <tr><th>운영비</th><td>${formatWon(totals.totalBudget)}</td><th>집행액</th><td>${formatWon(totals.spent)}</td></tr>
-          <tr><th>집행잔액</th><td>${formatWon(totals.remaining)}</td><th>이자 포함 잔액</th><td>${formatWon(finalBalance)}</td></tr>
+          <tr><th>지급완료액</th><td>${formatWon(totals.paid)}</td><th>미지급액</th><td>${formatWon(totals.unpaid)}</td></tr>
+          <tr><th>정산잔액</th><td>${formatWon(totals.remaining)}</td><th>실지급 잔액</th><td>${formatWon(totals.cashRemaining)}</td></tr>
+          <tr><th>이자 포함 정산잔액</th><td colspan="3">${formatWon(finalBalance)}</td></tr>
         </tbody>
       </table>
       <p>위와 같이 2026 AI 디지털 교사 동아리 운영비 집행 내역을 정산합니다.</p>
@@ -863,6 +1475,8 @@ function renderPrintDocument() {
             <th>예산 항목</th>
             <th>예산 또는 한도</th>
             <th>집행액</th>
+            <th>지급완료액</th>
+            <th>미지급액</th>
             <th>잔액</th>
             <th>비고</th>
           </tr>
@@ -870,12 +1484,16 @@ function renderPrintDocument() {
         <tbody>
           ${Object.entries(CATEGORIES).map(([key, category]) => {
             const spent = totals.categoryTotals[key];
+            const paid = totals.categoryPaidTotals[key];
+            const unpaid = spent - paid;
             const limit = getCategoryBudget(key);
             return `
               <tr>
                 <td>${category.label}</td>
                 <td class="num">${formatWon(limit)}</td>
                 <td class="num">${formatWon(spent)}</td>
+                <td class="num">${formatWon(paid)}</td>
+                <td class="num">${formatWon(unpaid)}</td>
                 <td class="num">${formatWon(limit - spent)}</td>
                 <td>${spent > limit ? "한도 초과" : ""}</td>
               </tr>
@@ -885,6 +1503,8 @@ function renderPrintDocument() {
             <th>합계</th>
             <th class="num">${formatWon(totals.totalBudget)}</th>
             <th class="num">${formatWon(totals.spent)}</th>
+            <th class="num">${formatWon(totals.paid)}</th>
+            <th class="num">${formatWon(totals.unpaid)}</th>
             <th class="num">${formatWon(totals.remaining)}</th>
             <th></th>
           </tr>
@@ -904,6 +1524,7 @@ function renderPrintDocument() {
             <th>증빙번호</th>
             <th>예산 항목</th>
             <th>사용 내용</th>
+            <th>지급</th>
             <th>첨부 파일</th>
             <th>점검</th>
           </tr>
@@ -919,6 +1540,7 @@ function renderPrintDocument() {
                 <td>${escapeHtml(entry.evidenceNo || entry.id)}</td>
                 <td>${CATEGORIES[entry.category].label}</td>
                 <td>${escapeHtml(entry.description || "")}</td>
+                <td>${entry.paid ? `지급완료 ${escapeHtml(entry.paidDate || "")}` : "미지급"}</td>
                 <td>${fileNames.length ? escapeHtml(fileNames.join(", ")) : "첨부 없음"}</td>
                 <td>${warnings.length ? escapeHtml(warnings.join(" / ")) : "정상"}</td>
               </tr>
@@ -948,6 +1570,7 @@ function renderAiSubscriptionPrintPage() {
         <tbody>
           <tr><th>AI 구독료 배정액</th><td class="num">${formatWon(summary.budget)}</td><th>사용액</th><td class="num">${formatWon(summary.total)}</td></tr>
           <tr><th>사용가능 잔액</th><td class="num">${formatWon(summary.remaining)}</td><th>집계 기준</th><td>지출일자 결제월</td></tr>
+          <tr><th>지급완료액</th><td class="num">${formatWon(summary.paid)}</td><th>미지급액</th><td class="num">${formatWon(summary.unpaid)}</td></tr>
         </tbody>
       </table>
 
@@ -987,6 +1610,114 @@ function renderAiSubscriptionPrintPage() {
   `;
 }
 
+function renderPptxCopyText() {
+  if (!els.pptxCopyText) return;
+  els.pptxCopyText.textContent = buildPptxCopyText();
+}
+
+function buildPptxCopyText() {
+  const totals = getTotals();
+  const project = state.project;
+  const today = new Date();
+  const dateLabel = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+  const lines = [];
+
+  lines.push("[1쪽 표지]");
+  lines.push(`학교명\t${project.school || ""}`);
+  lines.push(`학교장 성명\t${project.principalName || ""}`);
+  lines.push(`학교 주소\t${project.schoolAddress || ""}`);
+  lines.push(`학교 대표 전화 번호\t${project.schoolPhone || ""}`);
+  lines.push(`담당자 성명\t${project.managerName || ""}`);
+  lines.push(`휴대전화\t${project.managerPhone || ""}`);
+  lines.push(`이메일 주소\t${project.managerEmail || ""}`);
+  lines.push(`운영비\t${totals.totalBudget}`);
+  lines.push(`집행액\t${totals.spent}`);
+  lines.push(`집행잔액\t${totals.remaining}`);
+  lines.push(`이자\t${toNumber(project.interest)}`);
+  lines.push(`제출일\t${dateLabel}`);
+  lines.push("");
+
+  lines.push("[2쪽 운영비 실적 총괄표]");
+  lines.push(["순번", "예산 구분", "총 소요 예산", "비고"].join("\t"));
+  Object.entries(CATEGORIES).forEach(([key, category], index) => {
+    lines.push([
+      index + 1,
+      category.pptLabel,
+      totals.categoryTotals[key] || 0,
+      getCategoryNote(key)
+    ].join("\t"));
+  });
+  lines.push(["합계", "", totals.spent, ""].join("\t"));
+  lines.push("");
+
+  Object.entries(CATEGORIES).forEach(([key, category]) => {
+    lines.push(`[${category.pptLabel} 지출 세부 내역]`);
+    lines.push(["No", "예산 구분", "지출 일자", "세부 내역", "소요 예산(원)"].join("\t"));
+    const rows = state.entries.filter((entry) => entry.category === key);
+    if (rows.length) {
+      rows.forEach((entry, index) => {
+        lines.push([
+          index + 1,
+          category.pptLabel,
+          formatPptDate(entry.date),
+          entry.description || entry.itemName || "",
+          toNumber(entry.amount)
+        ].join("\t"));
+      });
+    } else {
+      lines.push([1, category.pptLabel, "", "", 0].join("\t"));
+    }
+    lines.push(["합계", "", "", "", rows.reduce((sum, entry) => sum + toNumber(entry.amount), 0)].join("\t"));
+    lines.push("");
+
+    lines.push(`[${category.pptLabel} 증빙자료 목록]`);
+    lines.push(["증빙번호", "지급처", "품명", "첨부 파일", "지급 상태"].join("\t"));
+    rows.forEach((entry) => {
+      const fileNames = ATTACHMENTS.flatMap((attachment) => {
+        return (entry.attachments[attachment.key] || []).map((file) => `${attachment.label}: ${file.name}`);
+      });
+      lines.push([
+        entry.evidenceNo || entry.id,
+        entry.vendor || "",
+        entry.itemName || "",
+        fileNames.join(", "),
+        entry.paid ? `지급완료 ${entry.paidDate || ""}` : "미지급"
+      ].join("\t"));
+    });
+    lines.push("");
+  });
+
+  lines.push("[메모]");
+  lines.push("원본 PPTX 양식의 파란색 안내 문구는 최종 제출 전 삭제합니다.");
+  lines.push("영수증 이미지는 검토 탭의 증빙 보기에서 원본을 확인한 뒤 PPTX 해당 증빙자료 영역에 붙여넣습니다.");
+  return lines.join("\n");
+}
+
+function getCategoryNote(categoryKey) {
+  if (categoryKey === "research") return "50% 이내";
+  if (categoryKey === "meeting") return "10% 이내";
+  if (categoryKey === "training") return "";
+  if (categoryKey === "direct") return "AI 구독료 포함";
+  return "";
+}
+
+function formatPptDate(date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+  if (!match) return date || "";
+  return `${match[1].slice(2)}.${match[2]}.${match[3]}`;
+}
+
+async function copyPptxText() {
+  const text = buildPptxCopyText();
+  try {
+    await navigator.clipboard.writeText(text);
+    flashButton(document.querySelector("#copyPptxButton"), "복사됨");
+  } catch {
+    els.pptxCopyText.textContent = text;
+    alert("자동 복사가 막혔습니다. 아래 붙여넣기용 데이터를 직접 선택해서 복사하세요.");
+  }
+}
+
 function renderCategoryPrintPage(categoryKey, category) {
   const entries = state.entries.filter((entry) => entry.category === categoryKey);
   return `
@@ -1002,6 +1733,7 @@ function renderCategoryPrintPage(categoryKey, category) {
             <th>품명</th>
             <th>지급처</th>
             <th>증빙번호</th>
+            <th>지급 상태</th>
             <th>소요 예산</th>
           </tr>
         </thead>
@@ -1015,9 +1747,10 @@ function renderCategoryPrintPage(categoryKey, category) {
               <td>${escapeHtml(entry.itemName || "")}</td>
               <td>${escapeHtml(entry.vendor || "")}</td>
               <td>${escapeHtml(entry.evidenceNo || "")}</td>
+              <td>${entry.paid ? `지급완료 ${escapeHtml(entry.paidDate || "")}` : "미지급"}</td>
               <td class="num">${formatWon(entry.amount)}</td>
             </tr>
-          `).join("") : `<tr><td colspan="8">해당 항목 지출 내역 없음</td></tr>`}
+          `).join("") : `<tr><td colspan="9">해당 항목 지출 내역 없음</td></tr>`}
         </tbody>
       </table>
       <h3 class="print-subtitle">필요 증빙</h3>
@@ -1057,6 +1790,9 @@ function renderAllPrintPreviews() {
 function getRequiredEvidenceLabels(categoryKey) {
   if (categoryKey === "research") {
     return ["확인서", "결과물", "계좌이체 확인증", "수당 지급 기준"];
+  }
+  if (categoryKey === "training") {
+    return ["상세 품목·단가가 적힌 지출 내역서", "신용카드 매출전표 또는 세금계산서"];
   }
   if (categoryKey === "meeting") {
     return ["신용카드 영수증", "협의록", "일시/장소/주제/내용", "참석자 명단", "사진"];
@@ -1146,22 +1882,29 @@ function renderMemberPreview() {
   }).join("");
 }
 
-function handleMemberSubmit(event) {
+async function handleMemberSubmit(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
   const receiptFiles = draftMemberAttachments.receiptBundle || [];
+  const krwCardSlipFiles = draftMemberAttachments.krwCardSlip || [];
 
   if (!receiptFiles.length) {
-    alert("영수증/구매내역서를 첨부하세요.");
+    alert("AI 서비스 영수증을 첨부하세요.");
+    return;
+  }
+
+  if (!krwCardSlipFiles.length) {
+    alert("카드사 원화전표를 첨부하세요.");
     return;
   }
 
   const vendor = data.get("vendor").trim();
   const amount = toNumber(data.get("amount"));
+  const budgetStatus = getMemberBudgetStatus(data.get("submitter"), amount);
   const attachments = emptyAttachments();
   attachments.cardReceipt = receiptFiles;
   attachments.foreignReceipt = draftMemberAttachments.foreignReceipt || [];
-  attachments.krwCardSlip = draftMemberAttachments.krwCardSlip || [];
+  attachments.krwCardSlip = krwCardSlipFiles;
 
   const entry = {
     id: nextId(),
@@ -1181,15 +1924,34 @@ function handleMemberSubmit(event) {
     unitPrice: amount,
     paymentMethod: "card",
     evidenceNo: makeEvidenceNo("direct"),
+    paid: false,
+    paidDate: "",
     notes: data.get("notes").trim(),
     attachments
   };
 
-  state.entries.push(entry);
+  try {
+    if (isRemoteMode) {
+      await createMemberAiExpense(authState.profile, entry);
+      await loadRemoteState();
+    } else {
+      state.entries.push(entry);
+    }
+  } catch (error) {
+    console.error(error);
+    alert("제출 저장 또는 영수증 업로드에 실패했습니다. 파일 크기와 로그인 상태를 확인하세요.");
+    return;
+  }
   saveLocal({ silent: true });
   resetMemberForm();
   renderAll();
-  activateTab("aiUsage");
+  activateTab(authState.profile?.role === "member" ? "memberStatus" : "aiUsage");
+
+  if (!budgetStatus.hasLimit) {
+    alert("해당 회원의 AI 구독료 가능금액이 아직 설정되지 않았습니다. 제출은 저장되었고 관리자 확인이 필요합니다.");
+  } else if (budgetStatus.projectedOver) {
+    alert(`제출은 저장되었습니다. 다만 회원별 가능금액을 ${formatWon(Math.abs(budgetStatus.projectedRemaining))} 초과합니다.`);
+  }
 }
 
 function handleExpenseSubmit(event) {
@@ -1215,6 +1977,8 @@ function handleExpenseSubmit(event) {
     unitPrice: toNumber(data.get("unitPrice")),
     paymentMethod: data.get("paymentMethod"),
     evidenceNo: data.get("evidenceNo").trim(),
+    paid: editingId ? Boolean(state.entries.find((item) => item.id === editingId)?.paid) : false,
+    paidDate: editingId ? state.entries.find((item) => item.id === editingId)?.paidDate || "" : "",
     notes: data.get("notes").trim(),
     attachments: mergeAttachmentsForSubmit(editingId)
   };
@@ -1274,6 +2038,7 @@ function resetExpenseForm() {
 
 function resetMemberForm() {
   els.memberSubmitForm.reset();
+  syncMemberIdentityFields();
   draftMemberAttachments = emptyMemberAttachments();
   document.querySelectorAll("[data-member-attachment-key]").forEach((input) => {
     input.value = "";
@@ -1311,6 +2076,113 @@ window.deleteEntry = function deleteEntry(id) {
   saveLocal({ silent: true });
   renderAll();
 };
+
+window.togglePaid = async function togglePaid(id) {
+  const entry = state.entries.find((item) => item.id === id);
+  if (!entry) return;
+
+  let nextPaid;
+  if (entry.paid) {
+    const ok = confirm(`${entry.evidenceNo || entry.id} 지급 완료 표시를 취소할까요?`);
+    if (!ok) return;
+    nextPaid = false;
+  } else {
+    nextPaid = true;
+  }
+
+  if (isRemoteMode) {
+    await updateRemotePaid(id, nextPaid);
+    await loadRemoteState();
+  } else {
+    entry.paid = nextPaid;
+    entry.paidDate = nextPaid ? new Date().toISOString().slice(0, 10) : "";
+  }
+  saveLocal({ silent: true });
+  renderAll();
+};
+
+window.viewEvidence = function viewEvidence(id) {
+  selectedEvidenceEntryId = id;
+  renderEvidencePanel();
+  els.evidencePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+window.closeEvidence = function closeEvidence() {
+  selectedEvidenceEntryId = "";
+  renderEvidencePanel();
+};
+
+function renderEvidencePanel() {
+  if (!els.evidencePanel) return;
+
+  if (!selectedEvidenceEntryId) {
+    els.evidencePanel.innerHTML = `
+      <div class="empty-state">검토 표에서 증빙 보기를 누르면 첨부 원본 미리보기가 여기에 표시됩니다.</div>
+    `;
+    return;
+  }
+
+  const entry = state.entries.find((item) => item.id === selectedEvidenceEntryId);
+  if (!entry) {
+    selectedEvidenceEntryId = "";
+    renderEvidencePanel();
+    return;
+  }
+
+  const grouped = ATTACHMENTS.map((attachment) => ({
+    ...attachment,
+    files: entry.attachments?.[attachment.key] || []
+  })).filter((attachment) => attachment.files.length);
+
+  els.evidencePanel.innerHTML = `
+    <section class="evidence-viewer">
+      <div class="section-heading compact-heading">
+        <div>
+          <h3 class="section-subtitle">${escapeHtml(entry.evidenceNo || entry.id)} 증빙 원본</h3>
+          <p>${escapeHtml(entry.submitter || "-")} · ${escapeHtml(entry.description || "-")} · ${formatWon(entry.amount)}</p>
+        </div>
+        <button type="button" class="ghost-button" onclick="closeEvidence()">닫기</button>
+      </div>
+      ${grouped.length ? grouped.map(renderEvidenceGroup).join("") : `<div class="empty-state">첨부된 증빙 파일이 없습니다.</div>`}
+    </section>
+  `;
+}
+
+function renderEvidenceGroup(group) {
+  return `
+    <div class="evidence-group">
+      <h4>${escapeHtml(group.label)}</h4>
+      <div class="evidence-grid">
+        ${group.files.map((file) => renderEvidenceFile(file, group.label)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderEvidenceFile(file, label) {
+  const name = escapeHtml(file.name || "첨부 파일");
+  const hasData = Boolean(file.dataUrl);
+  const media = hasData && file.type?.startsWith("image/")
+    ? `<img src="${file.dataUrl}" alt="">`
+    : hasData && file.type === "application/pdf"
+      ? `<iframe src="${file.dataUrl}" title="${name}"></iframe>`
+      : `<div class="file-placeholder">미리보기 데이터 없음</div>`;
+  const download = hasData
+    ? `<a class="small-button evidence-download" href="${file.dataUrl}" download="${name}">다운로드</a>`
+    : "";
+
+  return `
+    <article class="evidence-file">
+      ${media}
+      <div class="evidence-file-meta">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${name}</span>
+        <span>${formatBytes(file.size)}</span>
+        ${download}
+      </div>
+    </article>
+  `;
+}
 
 function makeEvidenceNo(category, editingId) {
   if (editingId) {
@@ -1364,8 +2236,13 @@ function getEntryWarnings(entry) {
       warnings.push("직접성 경비는 거래명세서 또는 구매내역서 첨부를 확인하세요.");
     }
     if (looksForeignPayment(entry)) {
-      if (!hasAttachment(entry, "foreignReceipt")) warnings.push("해외 AI 툴 결제는 외화영수증이 필요합니다.");
-      if (!hasAttachment(entry, "krwCardSlip")) warnings.push("해외 AI 툴 결제는 국내카드사원화전표가 필요합니다.");
+      const hasOfficialServiceReceipt = entry.directType === "ai_subscription" && hasAttachment(entry, "cardReceipt");
+      const hasForeignReceipt = hasAttachment(entry, "foreignReceipt");
+      const hasKrwCardSlip = hasAttachment(entry, "krwCardSlip");
+      if (!hasForeignReceipt && !hasOfficialServiceReceipt) {
+        warnings.push("해외 AI 툴 결제는 외화영수증 또는 서비스 공식 영수증 첨부를 확인하세요.");
+      }
+      if (!hasKrwCardSlip) warnings.push("해외 AI 툴 결제는 국내카드사원화전표가 필요합니다.");
     }
   }
 
@@ -1499,6 +2376,14 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function formatBytes(value) {
+  const bytes = toNumber(value);
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
+  return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1506,4 +2391,15 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeJsArg(value) {
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\r", "");
 }

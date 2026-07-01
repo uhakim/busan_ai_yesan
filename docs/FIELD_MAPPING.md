@@ -16,6 +16,9 @@
 | 운영비 | `project.totalBudget` | 2,000,000 |
 | 집행액 | `sum(entries.amount)` | 승인/확인된 건만 |
 | 집행잔액 | `totalBudget - spent` | 자동 계산 |
+| 지급완료액 | `sum(entries.amount where paid == true)` | 실제 회원 통장 지급 완료 기준 |
+| 미지급액 | `sum(entries.amount where paid != true)` | 접수되었지만 아직 지급하지 않은 금액 |
+| 실지급 잔액 | `totalBudget - paid` | 통장에서 아직 나가지 않은 금액 기준 |
 | 이자 | `project.interest` | 필요 시 입력 |
 
 ## 운영비 실적 총괄표
@@ -23,6 +26,7 @@
 | 양식 항목 | 앱 계산 |
 |---|---|
 | 연구 활동비 | `sum(category == research)` |
+| 연수 운영비 | `sum(category == training)` |
 | 직접성 경비 | `sum(category == direct)` |
 | 업무 협의회비 | `sum(category == meeting)` |
 | 합계 | 전체 합계 |
@@ -38,6 +42,7 @@
 | 지출 일자 | `date` |
 | 세부 내역 | `description` |
 | 소요 예산 | `amount` |
+| 지급 상태 | `paid`, `paidDate` |
 
 필요 증빙:
 
@@ -57,6 +62,7 @@
 | 지출 일자 | `date` |
 | 세부 내역 | `description` |
 | 소요 예산 | `amount` |
+| 지급 상태 | `paid`, `paidDate` |
 
 추가 필드:
 
@@ -72,8 +78,26 @@
 
 - 구매내역서
 - 카드 영수증 또는 계좌이체 확인증
-- 해외 결제 시 외화 영수증
+- 해외 결제 시 외화 영수증 또는 서비스 공식 영수증
 - 해외 결제 시 국내 카드사 원화 이용 전표
+
+## 연수 운영비 지출 세부내역
+
+대상: `category == training`
+
+| 양식 컬럼 | 앱 필드 |
+|---|---|
+| 순번 | 자동 |
+| 예산 구분 | 연수 운영비 |
+| 지출 일자 | `date` |
+| 세부 내역 | `description` |
+| 소요 예산 | `amount` |
+| 지급 상태 | `paid`, `paidDate` |
+
+필요 증빙:
+
+- 상세 품목·단가가 적힌 지출 내역서
+- 신용카드 매출전표 또는 세금계산서
 
 ## 업무협의회비 지출 세부내역
 
@@ -86,6 +110,7 @@
 | 지출 일자 | `date` |
 | 세부 내역 | `description` |
 | 소요 예산 | `amount` |
+| 지급 상태 | `paid`, `paidDate` |
 
 필요 증빙:
 
@@ -103,6 +128,7 @@
 초안:
 
 - 연구활동비: `1-01`, `1-02`
+- 연수 운영비: `2-01`, `2-02`
 - 직접성 경비: `3-01`, `3-02`
 - 업무협의회비: `4-01`, `4-02`
 

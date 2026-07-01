@@ -24,13 +24,41 @@
     </header>
 
     <main class="app-shell">
+      <section class="auth-panel" id="authPanel" hidden>
+        <form id="loginForm" class="login-form">
+          <div>
+            <h2>로그인</h2>
+            <p>선생님은 내 예산과 제출 내역만 보고, 관리자는 전체 정산을 관리합니다.</p>
+          </div>
+          <label>
+            이메일
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>
+            비밀번호
+            <input type="password" name="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="primary-button">로그인</button>
+          <p class="auth-message" id="authMessage"></p>
+        </form>
+      </section>
+
+      <section class="session-bar" id="sessionBar" hidden>
+        <div>
+          <strong id="sessionName"></strong>
+          <span id="sessionRole"></span>
+        </div>
+        <button type="button" class="ghost-button" id="logoutButton">로그아웃</button>
+      </section>
+
       <nav class="tabs" aria-label="주요 화면">
-        <button type="button" class="tab-button active" data-tab="dashboard">대시보드</button>
-        <button type="button" class="tab-button" data-tab="memberSubmit">회원용 제출</button>
-        <button type="button" class="tab-button" data-tab="aiUsage">AI 구독료 현황</button>
-        <button type="button" class="tab-button" data-tab="entry">지출 입력</button>
-        <button type="button" class="tab-button" data-tab="review">검토</button>
-        <button type="button" class="tab-button" data-tab="print">최종 출력</button>
+        <button type="button" class="tab-button active" data-tab="dashboard" data-role="admin">대시보드</button>
+        <button type="button" class="tab-button" data-tab="memberSubmit" data-role="all">AI 구독료 제출</button>
+        <button type="button" class="tab-button" data-tab="aiUsage" data-role="admin">AI 구독료 현황</button>
+        <button type="button" class="tab-button" data-tab="entry" data-role="admin">지출 입력</button>
+        <button type="button" class="tab-button" data-tab="review" data-role="admin">검토</button>
+        <button type="button" class="tab-button" data-tab="memberStatus" data-role="member">내 지급상태</button>
+        <button type="button" class="tab-button" data-tab="print" data-role="admin">최종 출력</button>
       </nav>
 
       <section class="tab-panel active" id="dashboardPanel">
@@ -50,6 +78,8 @@
                   <th>항목</th>
                   <th class="num">한도</th>
                   <th class="num">사용액</th>
+                  <th class="num">지급완료</th>
+                  <th class="num">미지급</th>
                   <th class="num">잔액</th>
                   <th>사용률</th>
                   <th>상태</th>
@@ -75,14 +105,14 @@
         <section class="work-section">
           <div class="section-heading">
             <div>
-              <h2>회원용 AI 구독료 제출</h2>
-              <p>회원은 본인 이름, 결제 금액, 결제일, 영수증만 간단히 제출합니다.</p>
+              <h2>AI 구독료 제출</h2>
+              <p>서비스 영수증과 카드사 원화전표를 첨부하면 관리자에게 제출됩니다.</p>
             </div>
           </div>
 
           <form id="memberSubmitForm" class="expense-form">
             <div class="form-grid">
-              <label>
+              <label class="member-submitter-field">
                 이름
                 <input type="text" name="submitter" required autocomplete="name">
               </label>
@@ -103,31 +133,58 @@
                 <textarea name="notes" rows="3" placeholder="이용 기간, 계정명, 특이사항 등"></textarea>
               </label>
             </div>
+            <div class="budget-hint" id="memberBudgetHint"></div>
 
             <fieldset class="attachment-fieldset">
               <legend>영수증 첨부</legend>
               <div class="attachment-grid member-attachment-grid">
                 <label class="attachment-box">
-                  <span>영수증/구매내역서</span>
+                  <span>AI 서비스 영수증</span>
                   <input type="file" multiple required data-member-attachment-key="receiptBundle" accept="image/*,application/pdf">
                 </label>
                 <label class="attachment-box">
-                  <span>외화영수증</span>
-                  <input type="file" multiple data-member-attachment-key="foreignReceipt" accept="image/*,application/pdf">
+                  <span>카드사 원화전표</span>
+                  <input type="file" multiple required data-member-attachment-key="krwCardSlip" accept="image/*,application/pdf">
                 </label>
                 <label class="attachment-box">
-                  <span>국내카드사원화전표</span>
-                  <input type="file" multiple data-member-attachment-key="krwCardSlip" accept="image/*,application/pdf">
+                  <span>외화 영수증</span>
+                  <input type="file" multiple data-member-attachment-key="foreignReceipt" accept="image/*,application/pdf">
                 </label>
               </div>
               <div class="preview-panel" id="memberPreview"></div>
             </fieldset>
 
             <div class="form-actions">
-              <button type="submit" class="primary-button" id="memberSubmitButton">AI 구독료 제출</button>
+              <button type="submit" class="primary-button" id="memberSubmitButton">제출하기</button>
               <button type="button" class="ghost-button" id="clearMemberFormButton">초기화</button>
             </div>
           </form>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="memberStatusPanel">
+        <section class="work-section">
+          <div class="section-heading">
+            <div>
+              <h2>내 제출 내역</h2>
+              <p>내 AI 구독료 가능금액, 사용액, 지급 여부만 확인합니다.</p>
+            </div>
+          </div>
+          <section class="summary-grid ai-budget-summary" id="myBudgetSummary"></section>
+          <div class="table-wrap">
+            <table class="dense-table">
+              <thead>
+                <tr>
+                  <th>결제일</th>
+                  <th>서비스</th>
+                  <th class="num">금액</th>
+                  <th>증빙</th>
+                  <th>지급 여부</th>
+                </tr>
+              </thead>
+              <tbody id="myExpenseRows"></tbody>
+            </table>
+          </div>
         </section>
       </section>
 
@@ -140,6 +197,50 @@
             </div>
           </div>
           <section class="summary-grid ai-budget-summary" id="aiBudgetSummary" aria-label="AI 구독료 예산 요약"></section>
+          <section class="inline-admin-section">
+            <div class="section-heading compact-heading">
+              <div>
+                <h3 class="section-subtitle">회원별 가능금액 설정</h3>
+                <p>회원별 배정액 합계는 AI 구독료 배정액 안에서 관리합니다. 초과 제출은 저장하되 경고로 표시합니다.</p>
+              </div>
+            </div>
+            <form id="memberBudgetForm" class="member-budget-form">
+              <input type="hidden" name="originalName">
+              <label>
+                회원 이름
+                <input type="text" name="name" required>
+              </label>
+              <label>
+                가능금액
+                <input type="number" name="limit" min="0" step="1" required>
+              </label>
+              <label class="wide-field">
+                메모
+                <input type="text" name="notes" placeholder="예: 7-10월 ChatGPT 개인 구독">
+              </label>
+              <div class="form-actions member-budget-actions">
+                <button type="submit" class="primary-button" id="memberBudgetSubmitButton">배정 저장</button>
+                <button type="button" class="ghost-button" id="clearMemberBudgetButton">초기화</button>
+              </div>
+            </form>
+            <div class="budget-hint" id="memberBudgetSummary"></div>
+            <div class="table-wrap">
+              <table class="dense-table member-budget-table">
+                <thead>
+                  <tr>
+                    <th>회원</th>
+                    <th class="num">가능금액</th>
+                    <th class="num">사용액</th>
+                    <th class="num">잔액</th>
+                    <th>상태</th>
+                    <th>메모</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody id="memberBudgetRows"></tbody>
+              </table>
+            </div>
+          </section>
           <div>
             <h3 class="section-subtitle">회원별 월별 사용액</h3>
             <div class="table-wrap">
@@ -177,6 +278,10 @@
             <label>
               연구활동비 예산
               <input type="number" name="researchBudget" min="0" step="1">
+            </label>
+            <label>
+              연수 운영비 예산
+              <input type="number" name="trainingBudget" min="0" step="1">
             </label>
             <label>
               직접성 경비 예산
@@ -249,6 +354,7 @@
                 예산 항목
                 <select name="category" required>
                   <option value="research">연구활동비</option>
+                  <option value="training">연수 운영비</option>
                   <option value="direct">직접성 경비</option>
                   <option value="meeting">업무협의회비</option>
                 </select>
@@ -346,6 +452,7 @@
               <select id="categoryFilter">
                 <option value="all">전체</option>
                 <option value="research">연구활동비</option>
+                <option value="training">연수 운영비</option>
                 <option value="direct">직접성 경비</option>
                 <option value="meeting">업무협의회비</option>
               </select>
@@ -368,19 +475,31 @@
                   <th class="num">금액</th>
                   <th>증빙</th>
                   <th>상태</th>
+                  <th>지급</th>
                   <th>관리</th>
                 </tr>
               </thead>
               <tbody id="expenseRows"></tbody>
             </table>
           </div>
+          <div class="evidence-panel" id="evidencePanel"></div>
         </section>
       </section>
 
       <section class="tab-panel print-tab" id="printPanel">
         <section class="print-toolbar">
-          <p>브라우저 인쇄 대화상자에서 PDF로 저장할 수 있습니다.</p>
+          <p>PPTX 원본 양식에는 아래 붙여넣기용 표를 복사해 옮기고, 필요하면 브라우저 인쇄로 PDF도 만들 수 있습니다.</p>
+          <button type="button" class="ghost-button" id="copyPptxButton">PPTX 붙여넣기용 복사</button>
           <button type="button" class="primary-button" id="printButtonSecondary">인쇄/PDF</button>
+        </section>
+        <section class="work-section pptx-copy-section">
+          <div class="section-heading">
+            <div>
+              <h2>PPTX 붙여넣기용 데이터</h2>
+              <p>원본 PPTX의 표지, 총괄표, 항목별 세부내역 표에 붙여넣기 좋게 탭으로 구분했습니다.</p>
+            </div>
+          </div>
+          <pre id="pptxCopyText" class="copy-text"></pre>
         </section>
         <article class="print-document" id="printDocument"></article>
       </section>
@@ -393,6 +512,6 @@
       </label>
     </template>
 
-    <script src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>
