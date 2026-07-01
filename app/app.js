@@ -16,6 +16,14 @@ import {
 } from "./supabaseStore.js";
 
 const STORAGE_KEY = "aiClubSettlementPrototype.v1";
+const MAX_ATTACHMENT_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_SIZE = 20 * 1024 * 1024;
+const ATTACHMENT_ACCEPT = ".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf";
+const IMAGE_ATTACHMENT_ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
+const ALLOWED_ATTACHMENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
 
 const DEFAULT_BUDGETS = {
   totalBudget: 2000000,
@@ -469,7 +477,7 @@ function buildAttachmentInputs() {
     node.querySelector("span").textContent = attachment.label;
     const input = node.querySelector("input");
     input.dataset.attachmentKey = attachment.key;
-    input.accept = attachment.key === "photo" ? "image/*" : "image/*,application/pdf";
+    input.accept = attachment.key === "photo" ? IMAGE_ATTACHMENT_ACCEPT : ATTACHMENT_ACCEPT;
     input.addEventListener("change", handleAttachmentChange);
     els.attachmentInputs.appendChild(node);
   });
@@ -2223,6 +2231,13 @@ async function handleAttachmentChange(event) {
   const input = event.target;
   const key = input.dataset.attachmentKey;
   const files = Array.from(input.files || []);
+  const imageOnly = key === "photo";
+  if (!validateAttachmentSelection(files, draftAttachments, key, { imageOnly })) {
+    input.value = "";
+    draftAttachments[key] = [];
+    renderDraftPreview();
+    return;
+  }
   draftAttachments[key] = await Promise.all(files.map(readFileAsDataUrl));
   renderDraftPreview();
 }
@@ -2231,8 +2246,59 @@ async function handleMemberAttachmentChange(event) {
   const input = event.target;
   const key = input.dataset.memberAttachmentKey;
   const files = Array.from(input.files || []);
+  if (!validateAttachmentSelection(files, draftMemberAttachments, key)) {
+    input.value = "";
+    draftMemberAttachments[key] = [];
+    renderMemberPreview();
+    return;
+  }
   draftMemberAttachments[key] = await Promise.all(files.map(readFileAsDataUrl));
   renderMemberPreview();
+}
+
+function validateAttachmentSelection(files, draft, currentKey, options = {}) {
+  const imageOnly = Boolean(options.imageOnly);
+  const invalidFile = files.find((file) => !isAllowedAttachmentFile(file, imageOnly));
+  if (invalidFile) {
+    alert(`${invalidFile.name} 파일 형식을 확인하세요.\n${imageOnly ? "사진 첨부는 JPG, PNG, WebP만 가능합니다." : "첨부 파일은 JPG, PNG, WebP, PDF만 가능합니다."}`);
+    return false;
+  }
+
+  const oversizedFile = files.find((file) => toNumber(file.size) > MAX_ATTACHMENT_FILE_SIZE);
+  if (oversizedFile) {
+    alert(`${oversizedFile.name} 파일이 ${formatBytes(MAX_ATTACHMENT_FILE_SIZE)}를 초과합니다.\n파일 1개당 최대 ${formatBytes(MAX_ATTACHMENT_FILE_SIZE)}까지 첨부할 수 있습니다.`);
+    return false;
+  }
+
+  const otherTotal = Object.entries(draft).reduce((sum, [key, draftFiles]) => {
+    return key === currentKey ? sum : sum + getFilesSize(draftFiles);
+  }, 0);
+  const selectedTotal = getFilesSize(files);
+  const nextTotal = otherTotal + selectedTotal;
+  if (nextTotal > MAX_ATTACHMENT_TOTAL_SIZE) {
+    alert(`첨부 파일 전체 용량이 ${formatBytes(MAX_ATTACHMENT_TOTAL_SIZE)}를 초과합니다.\n현재 선택 후 총 용량은 ${formatBytes(nextTotal)}입니다.`);
+    return false;
+  }
+
+  return true;
+}
+
+function isAllowedAttachmentFile(file, imageOnly = false) {
+  const type = String(file.type || "").toLowerCase();
+  const extension = getFileExtension(file.name);
+  const allowedTypes = imageOnly ? ALLOWED_IMAGE_TYPES : ALLOWED_ATTACHMENT_TYPES;
+  const allowedExtensions = imageOnly ? ALLOWED_IMAGE_EXTENSIONS : ALLOWED_ATTACHMENT_EXTENSIONS;
+  return allowedTypes.has(type) || allowedExtensions.has(extension);
+}
+
+function getFileExtension(name) {
+  const normalized = String(name || "").toLowerCase();
+  const index = normalized.lastIndexOf(".");
+  return index === -1 ? "" : normalized.slice(index + 1);
+}
+
+function getFilesSize(files) {
+  return (files || []).reduce((sum, file) => sum + toNumber(file.size), 0);
 }
 
 function readFileAsDataUrl(file) {
