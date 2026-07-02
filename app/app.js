@@ -1441,15 +1441,15 @@ async function uploadMemberCsv() {
 
 function downloadMemberCsvTemplate() {
   const csv = [
-    "name,email,role,aiLimit,password,notes",
+    "이름,이메일,역할,AI 구독료 한도,임시비밀번호,메모",
     "홍길동,user02@example.com,member,100000,123456,ChatGPT Plus",
-    "관리자,admin2@example.com,admin,0,123456,보조 관리자"
+    "김관리,admin2@example.com,admin,0,123456,보조 관리자"
   ].join("\n");
   const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "member-upload-template.csv";
+  link.download = "회원_일괄업로드_양식.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
