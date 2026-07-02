@@ -147,6 +147,19 @@ h3 {
   padding: 20px 28px 42px;
 }
 
+.app-footer {
+  padding: 0 28px 24px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.app-footer span {
+  display: inline-block;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
 .tabs {
   display: flex;
   align-items: center;
@@ -875,6 +888,7 @@ button:focus-visible {
   }
 
   .app-header,
+  .app-footer,
   .tabs,
   .tab-panel:not(.print-tab),
   .print-toolbar,
