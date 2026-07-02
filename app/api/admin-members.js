@@ -78,23 +78,23 @@ export default async function handler(request, response) {
 
     if (request.method === "POST") {
       if (body.action === "bulkUpsert") {
-        const result = await bulkUpsertMembers(adminClient, adminProfile, body.members || []);
+        const result = await bulkUpsertMembers(sessionClient, adminClient, adminProfile, body.members || []);
         sendJson(response, 200, result);
         return;
       }
-      const member = await upsertMember(adminClient, adminProfile, body);
+      const member = await upsertMember(sessionClient, adminClient, adminProfile, body);
       sendJson(response, 200, { member });
       return;
     }
 
     if (request.method === "PATCH") {
-      const member = await updateMember(adminClient, adminProfile, body);
+      const member = await updateMember(sessionClient, adminClient, adminProfile, body);
       sendJson(response, 200, { member });
       return;
     }
 
     if (request.method === "DELETE") {
-      const result = await deleteMember(adminClient, adminProfile, body);
+      const result = await deleteMember(sessionClient, adminClient, adminProfile, body);
       sendJson(response, 200, result);
       return;
     }
@@ -167,7 +167,7 @@ async function listMembers(client, clubId) {
   });
 }
 
-async function upsertMember(client, adminProfile, input) {
+async function upsertMember(dataClient, authClient, adminProfile, input) {
   const member = normalizeMemberInput(input);
   if (!member.password && !member.id) {
     throw makeError("신규 회원은 임시 비밀번호가 필요합니다.", 400);
@@ -175,12 +175,12 @@ async function upsertMember(client, adminProfile, input) {
 
   let userId = member.id || "";
   if (!userId) {
-    const existing = await findUserByEmail(client, member.email);
+    const existing = await findUserByEmail(authClient, member.email);
     if (existing) {
       userId = existing.id;
-      await updateAuthUser(client, userId, member);
+      await updateAuthUser(authClient, userId, member);
     } else {
-      const createResult = await client.auth.admin.createUser({
+      const createResult = await authClient.auth.admin.createUser({
         email: member.email,
         password: member.password,
         email_confirm: true,
@@ -190,19 +190,19 @@ async function upsertMember(client, adminProfile, input) {
       userId = createResult.data.user.id;
     }
   } else {
-    await updateAuthUser(client, userId, member);
+    await updateAuthUser(authClient, userId, member);
   }
 
-  await syncMemberRows(client, adminProfile.club_id, userId, member);
-  const members = await listMembers(client, adminProfile.club_id);
+  await syncMemberRows(dataClient, adminProfile.club_id, userId, member);
+  const members = await listMembers(dataClient, adminProfile.club_id);
   return members.find((row) => row.id === userId);
 }
 
-async function updateMember(client, adminProfile, input) {
+async function updateMember(dataClient, authClient, adminProfile, input) {
   const userId = cleanText(input.id);
   if (!userId) throw makeError("회원 id가 없습니다.", 400);
 
-  const current = await getClubProfile(client, adminProfile.club_id, userId);
+  const current = await getClubProfile(dataClient, adminProfile.club_id, userId);
   if (!current) throw makeError("해당 회원을 찾지 못했습니다.", 404);
 
   const member = normalizeMemberInput({
@@ -213,21 +213,21 @@ async function updateMember(client, adminProfile, input) {
     active: input.active === undefined ? current.active : input.active
   });
 
-  await updateAuthUser(client, userId, member);
-  await syncMemberRows(client, adminProfile.club_id, userId, member, current.name);
+  await updateAuthUser(authClient, userId, member);
+  await syncMemberRows(dataClient, adminProfile.club_id, userId, member, current.name);
 
-  const members = await listMembers(client, adminProfile.club_id);
+  const members = await listMembers(dataClient, adminProfile.club_id);
   return members.find((row) => row.id === userId);
 }
 
-async function bulkUpsertMembers(client, adminProfile, rows) {
+async function bulkUpsertMembers(dataClient, authClient, adminProfile, rows) {
   if (!Array.isArray(rows) || !rows.length) throw makeError("업로드할 회원 행이 없습니다.", 400);
   if (rows.length > 100) throw makeError("한 번에 최대 100명까지 업로드할 수 있습니다.", 400);
 
   const results = [];
   for (const row of rows) {
     try {
-      const member = await upsertMember(client, adminProfile, row);
+      const member = await upsertMember(dataClient, authClient, adminProfile, row);
       results.push({ ok: true, email: row.email, id: member?.id || "", name: member?.name || "" });
     } catch (error) {
       results.push({ ok: false, email: row.email || "", name: row.name || "", error: error.message || "실패" });
@@ -236,21 +236,21 @@ async function bulkUpsertMembers(client, adminProfile, rows) {
 
   return {
     results,
-    members: await listMembers(client, adminProfile.club_id)
+    members: await listMembers(dataClient, adminProfile.club_id)
   };
 }
 
-async function deleteMember(client, adminProfile, input) {
+async function deleteMember(dataClient, authClient, adminProfile, input) {
   const userId = cleanText(input.id);
   const mode = input.mode === "hard" ? "hard" : "deactivate";
   const force = input.force === true;
   if (!userId) throw makeError("회원 id가 없습니다.", 400);
   if (userId === adminProfile.id) throw makeError("현재 로그인한 관리자는 삭제할 수 없습니다.", 400);
 
-  const current = await getClubProfile(client, adminProfile.club_id, userId);
+  const current = await getClubProfile(dataClient, adminProfile.club_id, userId);
   if (!current) throw makeError("해당 회원을 찾지 못했습니다.", 404);
 
-  const { data: expenses, error: expensesError } = await client
+  const { data: expenses, error: expensesError } = await dataClient
     .from("expenses")
     .select("id")
     .eq("club_id", adminProfile.club_id)
@@ -263,25 +263,25 @@ async function deleteMember(client, adminProfile, input) {
       throw makeError("지출 기록이 있는 회원입니다. 먼저 비활성화하거나 강제 삭제를 다시 선택하세요.", 409);
     }
 
-    await deleteStorageObjectsForUser(client, adminProfile.club_id, userId);
-    await client.from("ai_member_budgets").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
-    await client.from("ai_member_budgets").delete().eq("club_id", adminProfile.club_id).eq("member_name", current.name);
-    await client.from("expense_files").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
-    await client.from("expenses").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
-    await client.from("profiles").delete().eq("club_id", adminProfile.club_id).eq("id", userId);
-    const deleteResult = await client.auth.admin.deleteUser(userId);
+    await deleteStorageObjectsForUser(dataClient, adminProfile.club_id, userId);
+    await dataClient.from("ai_member_budgets").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
+    await dataClient.from("ai_member_budgets").delete().eq("club_id", adminProfile.club_id).eq("member_name", current.name);
+    await dataClient.from("expense_files").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
+    await dataClient.from("expenses").delete().eq("club_id", adminProfile.club_id).eq("user_id", userId);
+    await dataClient.from("profiles").delete().eq("club_id", adminProfile.club_id).eq("id", userId);
+    const deleteResult = await authClient.auth.admin.deleteUser(userId);
     if (deleteResult.error) throw deleteResult.error;
-    return { deleted: true, mode, members: await listMembers(client, adminProfile.club_id) };
+    return { deleted: true, mode, members: await listMembers(dataClient, adminProfile.club_id) };
   }
 
-  const { error: updateError } = await client
+  const { error: updateError } = await dataClient
     .from("profiles")
     .update({ active: false, disabled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("club_id", adminProfile.club_id)
     .eq("id", userId);
   if (updateError) throw updateError;
 
-  return { deleted: false, mode, members: await listMembers(client, adminProfile.club_id) };
+  return { deleted: false, mode, members: await listMembers(dataClient, adminProfile.club_id) };
 }
 
 async function getClubProfile(client, clubId, userId) {
