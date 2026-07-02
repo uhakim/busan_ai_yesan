@@ -357,7 +357,6 @@ function bindElements() {
   els.sessionBar = document.querySelector("#sessionBar");
   els.sessionName = document.querySelector("#sessionName");
   els.sessionRole = document.querySelector("#sessionRole");
-  els.headerActions = document.querySelector(".header-actions");
   els.budgetRows = document.querySelector("#budgetRows");
   els.warningList = document.querySelector("#warningList");
   els.projectForm = document.querySelector("#projectForm");
@@ -403,16 +402,9 @@ function bindEvents() {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
   });
 
-  document.querySelector("#saveLocalButton").addEventListener("click", () => {
-    saveLocal();
-    flashButton(document.querySelector("#saveLocalButton"), "저장됨");
-  });
   els.loginForm.addEventListener("submit", handleLogin);
   document.querySelector("#logoutButton").addEventListener("click", handleLogout);
 
-  document.querySelector("#exportButton").addEventListener("click", exportJson);
-  document.querySelector("#importInput").addEventListener("change", importJson);
-  document.querySelector("#printButton").addEventListener("click", printDocument);
   document.querySelector("#printButtonSecondary").addEventListener("click", printDocument);
   document.querySelector("#copyPptxButton").addEventListener("click", copyPptxText);
   document.querySelector("#clearFormButton").addEventListener("click", resetExpenseForm);
@@ -718,9 +710,6 @@ function renderAuthUi() {
   const isMember = Boolean(configured && loggedIn && authState.profile.role === "member");
 
   document.body.classList.toggle("member-mode", isMember);
-  if (els.headerActions) {
-    els.headerActions.hidden = isMember;
-  }
 
   els.authPanel.hidden = !configured || loggedIn;
   els.sessionBar.hidden = !configured || !loggedIn;
