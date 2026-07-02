@@ -173,9 +173,6 @@ async function listMembers(client, clubId) {
 
 async function upsertMember(dataClient, authClient, adminProfile, input, options = {}) {
   const member = normalizeMemberInput(input);
-  if (!member.password && !member.id) {
-    throw makeError("신규 회원은 임시 비밀번호가 필요합니다.", 400);
-  }
 
   let userId = member.id || "";
   if (!userId) {
@@ -184,6 +181,9 @@ async function upsertMember(dataClient, authClient, adminProfile, input, options
       userId = existing.id;
       await updateAuthUser(authClient, userId, member);
     } else {
+      if (!member.password) {
+        throw makeError("신규 회원은 임시 비밀번호가 필요합니다.", 400);
+      }
       const createResult = await authClient.auth.admin.createUser({
         email: member.email,
         password: member.password,
