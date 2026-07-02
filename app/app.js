@@ -11,6 +11,7 @@ import {
   removeAdminMember,
   saveAdminMember,
   saveMemberBudget as saveRemoteMemberBudget,
+  saveProjectSettings as saveRemoteProjectSettings,
   signInWithPassword,
   signOut,
   updatePaid as updateRemotePaid
@@ -360,6 +361,8 @@ function bindElements() {
   els.budgetRows = document.querySelector("#budgetRows");
   els.warningList = document.querySelector("#warningList");
   els.projectForm = document.querySelector("#projectForm");
+  els.projectSaveButton = document.querySelector("#projectSaveButton");
+  els.projectSaveStatus = document.querySelector("#projectSaveStatus");
   els.expenseForm = document.querySelector("#expenseForm");
   els.memberSubmitForm = document.querySelector("#memberSubmitForm");
   els.memberBudgetForm = document.querySelector("#memberBudgetForm");
@@ -417,9 +420,13 @@ function bindEvents() {
         state.project[key] = NUMERIC_PROJECT_FIELDS.has(key) ? toNumber(data.get(key)) : data.get(key).trim();
       }
     });
+    if (els.projectSaveStatus) {
+      els.projectSaveStatus.textContent = isRemoteMode ? "저장되지 않은 변경사항이 있습니다." : "브라우저에 임시 저장되었습니다.";
+    }
     saveLocal({ silent: true });
     renderAll();
   });
+  els.projectForm.addEventListener("submit", handleProjectSubmit);
 
   els.expenseForm.addEventListener("submit", handleExpenseSubmit);
   els.expenseForm.elements.category.addEventListener("change", syncDirectTypeField);
@@ -596,6 +603,38 @@ function populateProjectForm() {
       field.value = value ?? "";
     }
   });
+  if (els.projectSaveStatus) {
+    els.projectSaveStatus.textContent = isRemoteMode ? "서버에 저장된 값을 불러왔습니다." : "";
+  }
+}
+
+async function handleProjectSubmit(event) {
+  event.preventDefault();
+  const data = new FormData(els.projectForm);
+  Object.keys(state.project).forEach((key) => {
+    if (data.has(key)) {
+      state.project[key] = NUMERIC_PROJECT_FIELDS.has(key) ? toNumber(data.get(key)) : data.get(key).trim();
+    }
+  });
+
+  try {
+    els.projectSaveButton.disabled = true;
+    if (els.projectSaveStatus) els.projectSaveStatus.textContent = "저장 중입니다.";
+    if (isRemoteMode) {
+      await saveRemoteProjectSettings(authState.profile, state.project);
+      await loadRemoteState();
+    } else {
+      saveLocal({ silent: true });
+    }
+    if (els.projectSaveStatus) els.projectSaveStatus.textContent = isRemoteMode ? "서버에 저장되었습니다." : "브라우저에 저장되었습니다.";
+    renderAll();
+  } catch (error) {
+    console.error(error);
+    if (els.projectSaveStatus) els.projectSaveStatus.textContent = "저장에 실패했습니다.";
+    alert(error.message || "기본 정보를 저장하지 못했습니다.");
+  } finally {
+    els.projectSaveButton.disabled = false;
+  }
 }
 
 function renderAll() {

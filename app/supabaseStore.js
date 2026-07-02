@@ -94,6 +94,36 @@ export async function updatePaid(expenseId, paid) {
   if (error) throw error;
 }
 
+export async function saveProjectSettings(profile, project) {
+  if (!profile?.club_id) throw new Error("프로필에 club_id가 없습니다.");
+  if (profile.role !== "admin") throw new Error("관리자만 기본 정보를 저장할 수 있습니다.");
+
+  const payload = {
+    club_id: profile.club_id,
+    club_name: project.clubName || "",
+    school: project.school || "",
+    principal_name: project.principalName || "",
+    school_address: project.schoolAddress || "",
+    school_phone: project.schoolPhone || "",
+    manager_name: project.managerName || "",
+    manager_phone: project.managerPhone || "",
+    manager_email: project.managerEmail || "",
+    total_budget: project.totalBudget || 0,
+    research_budget: project.researchBudget || 0,
+    training_budget: project.trainingBudget || 0,
+    direct_budget: project.directBudget || 0,
+    meeting_budget: project.meetingBudget || 0,
+    ai_subscription_budget: project.aiSubscriptionBudget || 0,
+    interest: project.interest || 0,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supabase
+    .from("project_settings")
+    .upsert(payload, { onConflict: "club_id" });
+  if (error) throw error;
+}
+
 export async function deleteExpense(profile, entry) {
   if (!profile?.club_id) throw new Error("프로필에 club_id가 없습니다.");
   if (profile.role !== "admin") throw new Error("관리자만 지출 내역을 삭제할 수 있습니다.");
