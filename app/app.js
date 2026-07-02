@@ -1,6 +1,7 @@
 import {
   bulkSaveAdminMembers,
   createMemberAiExpense,
+  deleteExpense as deleteRemoteExpense,
   deleteMemberBudget as deleteRemoteMemberBudget,
   fetchAdminMembers,
   fetchClubState,
@@ -2550,14 +2551,26 @@ window.editEntry = function editEntry(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
 
-window.deleteEntry = function deleteEntry(id) {
+window.deleteEntry = async function deleteEntry(id) {
   const entry = state.entries.find((item) => item.id === id);
   if (!entry) return;
 
-  const ok = confirm(`${entry.evidenceNo || entry.id} 지출 내역을 삭제할까요?`);
+  const ok = confirm(`${entry.evidenceNo || entry.id} 지출 내역과 첨부된 영수증 파일을 삭제할까요?`);
   if (!ok) return;
 
-  state.entries = state.entries.filter((item) => item.id !== id);
+  if (isRemoteMode) {
+    try {
+      await deleteRemoteExpense(authState.profile, entry);
+      await loadRemoteState();
+    } catch (error) {
+      console.error(error);
+      alert(`지출 내역 삭제에 실패했습니다. ${error.message || ""}`);
+      return;
+    }
+  } else {
+    state.entries = state.entries.filter((item) => item.id !== id);
+  }
+
   saveLocal({ silent: true });
   renderAll();
 };

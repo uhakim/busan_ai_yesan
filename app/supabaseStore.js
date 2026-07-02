@@ -94,6 +94,41 @@ export async function updatePaid(expenseId, paid) {
   if (error) throw error;
 }
 
+export async function deleteExpense(profile, entry) {
+  if (!profile?.club_id) throw new Error("프로필에 club_id가 없습니다.");
+  if (profile.role !== "admin") throw new Error("관리자만 지출 내역을 삭제할 수 있습니다.");
+  if (!entry?.id) throw new Error("삭제할 지출 내역을 찾지 못했습니다.");
+
+  const storagePaths = Array.from(new Set(
+    flattenAttachmentFiles(entry.attachments)
+      .map((file) => file.storagePath)
+      .filter(Boolean)
+  ));
+
+  for (let index = 0; index < storagePaths.length; index += 100) {
+    const chunk = storagePaths.slice(index, index + 100);
+    const { error } = await supabase.storage.from("receipts").remove(chunk);
+    if (error) throw error;
+  }
+
+  const { error: filesError } = await supabase
+    .from("expense_files")
+    .delete()
+    .eq("club_id", profile.club_id)
+    .eq("expense_id", entry.id);
+  if (filesError) throw filesError;
+
+  const { data, error } = await supabase
+    .from("expenses")
+    .delete()
+    .eq("club_id", profile.club_id)
+    .eq("id", entry.id)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("삭제할 지출 내역을 찾지 못했거나 삭제 권한이 없습니다.");
+}
+
 export async function createMemberAiExpense(profile, entry) {
   const expensePayload = {
     club_id: profile.club_id,
