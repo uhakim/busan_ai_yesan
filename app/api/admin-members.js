@@ -10,6 +10,10 @@ const jsonHeaders = {
 
 const ROLE_SET = new Set(["admin", "member"]);
 
+export const config = {
+  maxDuration: 60
+};
+
 export default async function handler(request, response) {
   if (request.method === "OPTIONS") {
     response.status(204).setHeader("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
@@ -167,7 +171,7 @@ async function listMembers(client, clubId) {
   });
 }
 
-async function upsertMember(dataClient, authClient, adminProfile, input) {
+async function upsertMember(dataClient, authClient, adminProfile, input, options = {}) {
   const member = normalizeMemberInput(input);
   if (!member.password && !member.id) {
     throw makeError("신규 회원은 임시 비밀번호가 필요합니다.", 400);
@@ -175,7 +179,7 @@ async function upsertMember(dataClient, authClient, adminProfile, input) {
 
   let userId = member.id || "";
   if (!userId) {
-    const existing = await findUserByEmail(authClient, member.email);
+    const existing = options.authUsersByEmail?.get(member.email) || await findUserByEmail(authClient, member.email);
     if (existing) {
       userId = existing.id;
       await updateAuthUser(authClient, userId, member);
@@ -188,12 +192,16 @@ async function upsertMember(dataClient, authClient, adminProfile, input) {
       });
       if (createResult.error) throw createResult.error;
       userId = createResult.data.user.id;
+      options.authUsersByEmail?.set(member.email, createResult.data.user);
     }
   } else {
     await updateAuthUser(authClient, userId, member);
   }
 
   await syncMemberRows(dataClient, adminProfile.club_id, userId, member);
+  if (options.returnMember === false) {
+    return { id: userId, name: member.name, email: member.email };
+  }
   const members = await listMembers(dataClient, adminProfile.club_id);
   return members.find((row) => row.id === userId);
 }
@@ -225,9 +233,13 @@ async function bulkUpsertMembers(dataClient, authClient, adminProfile, rows) {
   if (rows.length > 100) throw makeError("한 번에 최대 100명까지 업로드할 수 있습니다.", 400);
 
   const results = [];
+  const authUsersByEmail = await listAuthUsersByEmail(authClient);
   for (const row of rows) {
     try {
-      const member = await upsertMember(dataClient, authClient, adminProfile, row);
+      const member = await upsertMember(dataClient, authClient, adminProfile, row, {
+        authUsersByEmail,
+        returnMember: false
+      });
       results.push({ ok: true, email: row.email, id: member?.id || "", name: member?.name || "" });
     } catch (error) {
       results.push({ ok: false, email: row.email || "", name: row.name || "", error: error.message || "실패" });
@@ -307,6 +319,21 @@ async function findUserByEmail(client, email) {
     page += 1;
   }
   return null;
+}
+
+async function listAuthUsersByEmail(client) {
+  const usersByEmail = new Map();
+  let page = 1;
+  while (page < 20) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    (data.users || []).forEach((user) => {
+      if (user.email) usersByEmail.set(user.email.toLowerCase(), user);
+    });
+    if (!data.users?.length || data.users.length < 1000) break;
+    page += 1;
+  }
+  return usersByEmail;
 }
 
 async function updateAuthUser(client, userId, member) {

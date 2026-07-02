@@ -238,7 +238,8 @@ async function requestAdminMembers(method, body) {
   if (!token) throw new Error("로그인이 필요합니다.");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeoutMs = body?.action === "bulkUpsert" ? 60000 : 20000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch("/api/admin-members", {
@@ -251,7 +252,7 @@ async function requestAdminMembers(method, body) {
       signal: controller.signal
     });
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("회원 관리 API 응답이 지연되고 있습니다. Vercel 배포 환경에서 다시 확인하세요.");
+    if (error.name === "AbortError") throw new Error("회원 관리 API 응답이 지연되고 있습니다. CSV 행 수를 줄이거나 잠시 후 다시 시도하세요.");
     throw error;
   } finally {
     clearTimeout(timeout);
