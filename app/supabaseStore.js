@@ -385,9 +385,14 @@ function dataUrlToBlob(dataUrl, fallbackType = "application/octet-stream") {
 }
 
 function sanitizePathPart(value) {
-  return String(value)
-    .normalize("NFC")
-    .replace(/[\\/#?%*:|"<>]/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 120);
+  const original = String(value || "receipt").normalize("NFKD");
+  const extensionMatch = /\.([A-Za-z0-9]{1,8})$/.exec(original);
+  const extension = extensionMatch ? `.${extensionMatch[1].toLowerCase()}` : "";
+  const baseName = extension ? original.slice(0, -extension.length) : original;
+  const safeBase = baseName
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "receipt";
+  return `${safeBase}${extension}`.slice(0, 120);
 }
