@@ -133,3 +133,9 @@
 - 업무협의회비: `4-01`, `4-02`
 
 정산서 양식 번호와 실제 항목 순서가 확정되면 조정한다.
+
+## 협의회 기록과 한글 출력
+
+entry.meeting의 startTime, endTime, location, topic, content, attendees, absent를 기록한다. attendees는 쉼표 또는 줄바꿈으로 구분한다. DB 저장 시 notes에 __ai_club_notes_v1__: + {notes, meeting} JSON으로 직렬화하며, 읽을 때 분리한다. DB 열 추가 없이 기존 자료를 유지한다.
+
+HWPX 출력은 기존 정산서의 표지/실적 총괄표/예산별 지출 표 필드를 한글 표로 구성한다. 기존 PPTX의 화면 배치를 그대로 변환한 파일은 아니다. 협의록 HWPX가 첨부되어 있으면 해당 원본 본문·표·사진을 합치고, 미첨부이면 입력한 협의회 기록으로 협의록을 생성한다. 증빙은 지출 건별로 연결한다.

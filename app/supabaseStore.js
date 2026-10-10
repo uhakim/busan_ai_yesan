@@ -1,3 +1,5 @@
+import { saveAdminExpense } from "./expenseStore.js";
+import { unpackNotes } from "./meeting.js";
 import { hasSupabaseConfig, supabase } from "./supabaseClient.js";
 
 export { hasSupabaseConfig };
@@ -157,6 +159,32 @@ export async function deleteExpense(profile, entry) {
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("삭제할 지출 내역을 찾지 못했거나 삭제 권한이 없습니다.");
+}
+
+export async function saveExpense(profile, entry, editingId = "") {
+  return saveAdminExpense(supabase, profile, entry, editingId, async (expenseId, fileType, name) => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) throw new Error("로그인을 확인하세요.");
+    const response = await fetch("/api/admin-expense-upload", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify({ expenseId, fileType, name })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "첨부 업로드 권한을 확인하세요.");
+    return result;
+  });
+}
+
+export async function refreshEvidenceUrls(entries) {
+  const files = entries.flatMap(entry => Object.values(entry.attachments || {}).flat()).filter(file => file.storagePath);
+  if (!files.length) return;
+  const refreshed = await attachSignedFileUrls(files.map(file => ({ storage_path: file.storagePath })));
+  const urls = new Map(refreshed.map(file => [file.storage_path, file.signed_url]));
+  for (const file of files) {
+    const url = urls.get(file.storagePath);
+    if (!url) throw new Error(`${file.name}: 원본 다운로드 주소를 가져오지 못했습니다.`);
+    file.dataUrl = url;
+  }
 }
 
 export async function createMemberAiExpense(profile, entry) {
@@ -392,7 +420,7 @@ function mapExpense(expense, files) {
     evidenceNo: expense.evidence_no,
     paid: expense.paid,
     paidDate: expense.paid_at || "",
-    notes: expense.notes,
+    ...unpackNotes(expense.notes),
     attachments
   };
 }

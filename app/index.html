@@ -129,7 +129,7 @@
 
             <fieldset class="attachment-fieldset">
               <legend>영수증 첨부</legend>
-              <p class="field-note">JPG, PNG, WebP, PDF만 가능합니다. 파일 1개당 10MB, 제출 1건당 전체 20MB까지 첨부할 수 있습니다.</p>
+              <p class="field-note">JPG, PNG, WebP, PDF를 첨부할 수 있으며 협의록은 HWPX 원본도 가능합니다. 파일 1개당 10MB, 제출 1건당 전체 20MB까지 첨부할 수 있습니다.</p>
               <div class="attachment-grid member-attachment-grid">
                 <label class="attachment-box">
                   <span>AI 서비스 영수증 (외화영수증)</span>
@@ -437,7 +437,7 @@
           <div class="section-heading">
             <div>
               <h2>지출 입력</h2>
-              <p>영수증 한 건을 기준으로 입력합니다. 첨부는 파일명과 미리보기만 관리합니다.</p>
+              <p>영수증 한 건을 기준으로 입력하고 증빙 원본을 함께 보관합니다.</p>
             </div>
             <button type="button" class="ghost-button" id="clearFormButton">새 입력</button>
           </div>
@@ -525,9 +525,22 @@
               </label>
             </div>
 
+            <fieldset id="meetingFields" hidden>
+              <legend>협의회 기록</legend>
+              <div class="form-grid">
+                <label>시작 시간<input type="time" name="meetingStartTime"></label>
+                <label>종료 시간<input type="time" name="meetingEndTime"></label>
+                <label class="wide-field">협의 장소<input name="meetingLocation" type="text"></label>
+                <label class="wide-field">협의 주제<input name="meetingTopic" type="text"></label>
+                <label class="wide-field">협의 내용<textarea name="meetingContent" rows="8" placeholder="논의한 내용을 개조식으로 입력하세요."></textarea></label>
+                <label class="wide-field">참석자 명단<textarea name="meetingAttendees" rows="2" placeholder="이름을 쉼표 또는 줄바꿈으로 구분하세요."></textarea></label>
+                <label class="wide-field">불참자<input name="meetingAbsent" type="text" placeholder="회원 명단에서는 제외하지 않습니다."></label>
+              </div>
+            </fieldset>
+
             <fieldset class="attachment-fieldset">
               <legend>첨부 파일</legend>
-              <p class="field-note">JPG, PNG, WebP, PDF만 가능합니다. 파일 1개당 10MB, 제출 1건당 전체 20MB까지 첨부할 수 있습니다.</p>
+              <p class="field-note">JPG, PNG, WebP, PDF를 첨부할 수 있으며 협의록은 HWPX 원본도 가능합니다. 파일 1개당 10MB, 제출 1건당 전체 20MB까지 첨부할 수 있습니다.</p>
               <div class="attachment-grid" id="attachmentInputs"></div>
               <div class="preview-panel" id="currentPreview"></div>
             </fieldset>
@@ -595,9 +608,11 @@
 
       <section class="tab-panel print-tab" id="printPanel">
         <section class="print-toolbar">
-          <p>PPTX 원본 양식에는 아래 붙여넣기용 표를 복사해 옮기고, 필요하면 브라우저 인쇄로 PDF도 만들 수 있습니다.</p>
+          <p>정산서·지출 내역·협의록·증빙을 HWPX로 내려받을 수 있습니다. 기존 인쇄/PDF와 PPTX 붙여넣기도 사용할 수 있습니다.</p>
           <button type="button" class="ghost-button" id="copyPptxButton">PPTX 붙여넣기용 복사</button>
-          <button type="button" class="primary-button" id="printButtonSecondary">인쇄/PDF</button>
+          <button type="button" class="primary-button" id="hwpxExportButton">정산서 HWPX 다운로드</button>
+          <span id="hwpxExportStatus" role="status"></span>
+          <button type="button" class="ghost-button" id="printButtonSecondary">인쇄/PDF</button>
         </section>
         <section class="work-section pptx-copy-section">
           <div class="section-heading">

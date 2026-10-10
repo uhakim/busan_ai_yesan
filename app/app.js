@@ -1,3 +1,4 @@
+import { emptyMeeting, attendeeNames, validateMeeting } from "./meeting.js";
 import {
   bulkSaveAdminMembers,
   createMemberAiExpense,
@@ -12,6 +13,8 @@ import {
   saveAdminMember,
   saveMemberBudget as saveRemoteMemberBudget,
   saveProjectSettings as saveRemoteProjectSettings,
+  saveExpense as saveRemoteExpense,
+  refreshEvidenceUrls,
   signInWithPassword,
   signOut,
   updatePaid as updateRemotePaid
@@ -21,6 +24,7 @@ const STORAGE_KEY = "aiClubSettlementPrototype.v1";
 const MAX_ATTACHMENT_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_ATTACHMENT_TOTAL_SIZE = 20 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = ".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf";
+const HWPX_ATTACHMENT_ACCEPT = ATTACHMENT_ACCEPT + ",.hwpx,application/hwp+zip";
 const IMAGE_ATTACHMENT_ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 const ALLOWED_ATTACHMENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "pdf"]);
@@ -430,6 +434,7 @@ function bindEvents() {
 
   els.expenseForm.addEventListener("submit", handleExpenseSubmit);
   els.expenseForm.elements.category.addEventListener("change", syncDirectTypeField);
+  document.querySelector("#hwpxExportButton").addEventListener("click", exportHwpx);
   els.memberSubmitForm.addEventListener("submit", handleMemberSubmit);
   els.memberSubmitForm.elements.submitter.addEventListener("input", renderMemberBudgetHint);
   els.memberSubmitForm.elements.amount.addEventListener("input", renderMemberBudgetHint);
@@ -455,6 +460,11 @@ function syncDirectTypeField() {
   const categoryField = els.expenseForm?.elements.category;
   const directTypeSelect = els.expenseForm?.elements.directType;
   if (!categoryField || !directTypeSelect || !els.directTypeField) return;
+  const isMeeting = categoryField.value === "meeting";
+  document.querySelector("#meetingFields").hidden = !isMeeting;
+  for (const key of ["StartTime", "EndTime", "Location", "Topic", "Content", "Attendees"]) {
+    els.expenseForm.elements[`meeting${key}`].required = isMeeting;
+  }
 
   const isDirect = categoryField.value === "direct";
   els.directTypeField.hidden = !isDirect;
@@ -477,7 +487,7 @@ function buildAttachmentInputs() {
     node.querySelector("span").textContent = attachment.label;
     const input = node.querySelector("input");
     input.dataset.attachmentKey = attachment.key;
-    input.accept = attachment.key === "photo" ? IMAGE_ATTACHMENT_ACCEPT : ATTACHMENT_ACCEPT;
+    input.accept = attachment.key === "photo" ? IMAGE_ATTACHMENT_ACCEPT : attachment.key === "meetingMinutes" ? HWPX_ATTACHMENT_ACCEPT : ATTACHMENT_ACCEPT;
     input.addEventListener("change", handleAttachmentChange);
     els.attachmentInputs.appendChild(node);
   });
@@ -539,6 +549,7 @@ function normalizeState(raw) {
       paid: Boolean(entry.paid),
       paidDate: entry.paidDate || "",
       notes: entry.notes || "",
+      meeting: { ...emptyMeeting(), ...entry.meeting },
       attachments: { ...emptyAttachments(), ...(entry.attachments || {}) }
     };
   });
@@ -1920,7 +1931,7 @@ function renderPrintDocument() {
         </tbody>
       </table>
       <p>위와 같이 2026 AI 디지털 교사 동아리 운영비 집행 내역을 정산합니다.</p>
-      <p class="todo-box">TODO: 2차 이후 원본 PPTX 양식 자동 채우기, XLSX 생성, Google Drive/Form 연동을 검토합니다. 1차 프로토타입에는 외부 서버 연동을 포함하지 않습니다.</p>
+
     </section>
 
     <section class="print-page">
@@ -2232,7 +2243,7 @@ function renderAllPrintPreviews() {
         } else if (file.dataUrl && file.type === "application/pdf") {
           previewItems.push(`
             <div class="preview-item">
-              <iframe src="${file.dataUrl}" title="${escapeHtml(file.name)}"></iframe>
+              <a class="small-button" href="${escapeHtml(file.dataUrl)}" target="_blank" rel="noopener">PDF 원본 보기</a>
               <div>${escapeHtml(entry.evidenceNo || entry.id)} ${attachment.label}<br>${escapeHtml(file.name)}</div>
             </div>
           `);
@@ -2261,7 +2272,7 @@ async function handleAttachmentChange(event) {
   const key = input.dataset.attachmentKey;
   const files = Array.from(input.files || []);
   const imageOnly = key === "photo";
-  if (!validateAttachmentSelection(files, draftAttachments, key, { imageOnly })) {
+  if (!validateAttachmentSelection(files, draftAttachments, key, { imageOnly, hwpxAllowed: key === "meetingMinutes" })) {
     input.value = "";
     draftAttachments[key] = [];
     renderDraftPreview();
@@ -2287,9 +2298,9 @@ async function handleMemberAttachmentChange(event) {
 
 function validateAttachmentSelection(files, draft, currentKey, options = {}) {
   const imageOnly = Boolean(options.imageOnly);
-  const invalidFile = files.find((file) => !isAllowedAttachmentFile(file, imageOnly));
+  const invalidFile = files.find((file) => !isAllowedAttachmentFile(file, imageOnly, options.hwpxAllowed));
   if (invalidFile) {
-    alert(`${invalidFile.name} 파일 형식을 확인하세요.\n${imageOnly ? "사진 첨부는 JPG, PNG, WebP만 가능합니다." : "첨부 파일은 JPG, PNG, WebP, PDF만 가능합니다."}`);
+    alert(`${invalidFile.name} 파일 형식을 확인하세요.\n${imageOnly ? "사진 첨부는 JPG, PNG, WebP만 가능합니다." : "첨부 파일은 JPG, PNG, WebP, PDF가 가능하며, 협의록은 HWPX도 가능합니다."}`);
     return false;
   }
 
@@ -2312,12 +2323,12 @@ function validateAttachmentSelection(files, draft, currentKey, options = {}) {
   return true;
 }
 
-function isAllowedAttachmentFile(file, imageOnly = false) {
+function isAllowedAttachmentFile(file, imageOnly = false, hwpxAllowed = false) {
   const type = String(file.type || "").toLowerCase();
   const extension = getFileExtension(file.name);
   const allowedTypes = imageOnly ? ALLOWED_IMAGE_TYPES : ALLOWED_ATTACHMENT_TYPES;
   const allowedExtensions = imageOnly ? ALLOWED_IMAGE_EXTENSIONS : ALLOWED_ATTACHMENT_EXTENSIONS;
-  return allowedTypes.has(type) || allowedExtensions.has(extension);
+  return (hwpxAllowed && extension === "hwpx") || allowedTypes.has(type) || allowedExtensions.has(extension);
 }
 
 function getFileExtension(name) {
@@ -2336,7 +2347,7 @@ function readFileAsDataUrl(file) {
     reader.onload = () => {
       resolve({
         name: file.name,
-        type: file.type || "application/octet-stream",
+        type: getFileExtension(file.name) === "hwpx" ? "application/hwp+zip" : file.type || "application/octet-stream",
         size: file.size,
         dataUrl: reader.result
       });
@@ -2360,7 +2371,7 @@ function renderDraftPreview() {
     const media = file.type.startsWith("image/")
       ? `<img src="${file.dataUrl}" alt="">`
       : file.type === "application/pdf"
-        ? `<iframe src="${file.dataUrl}" title="${escapeHtml(file.name)}"></iframe>`
+        ? `<a class="small-button" href="${escapeHtml(file.dataUrl)}" target="_blank" rel="noopener">PDF 원본 보기</a>`
         : "";
     return `
       <div class="preview-item">
@@ -2385,7 +2396,7 @@ function renderMemberPreview() {
     const media = file.type.startsWith("image/")
       ? `<img src="${file.dataUrl}" alt="">`
       : file.type === "application/pdf"
-        ? `<iframe src="${file.dataUrl}" title="${escapeHtml(file.name)}"></iframe>`
+        ? `<a class="small-button" href="${escapeHtml(file.dataUrl)}" target="_blank" rel="noopener">PDF 원본 보기</a>`
         : "";
     return `
       <div class="preview-item">
@@ -2468,7 +2479,7 @@ async function handleMemberSubmit(event) {
   }
 }
 
-function handleExpenseSubmit(event) {
+async function handleExpenseSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const data = new FormData(form);
@@ -2494,19 +2505,32 @@ function handleExpenseSubmit(event) {
     paid: editingId ? Boolean(state.entries.find((item) => item.id === editingId)?.paid) : false,
     paidDate: editingId ? state.entries.find((item) => item.id === editingId)?.paidDate || "" : "",
     notes: data.get("notes").trim(),
+    meeting: Object.fromEntries(Object.keys(emptyMeeting()).map(key => [key, data.get(`meeting${key[0].toUpperCase()}${key.slice(1)}`) || ""])),
     attachments: mergeAttachmentsForSubmit(editingId)
   };
 
-  if (!entry.evidenceNo) {
-    entry.evidenceNo = makeEvidenceNo(entry.category, editingId);
-  }
-
-  if (editingId) {
-    const index = state.entries.findIndex((item) => item.id === editingId);
-    state.entries[index] = entry;
-  } else {
-    state.entries.push(entry);
-  }
+  const errors = validateMeeting(entry);
+  if (errors.length) { alert(errors.join("\n")); return; }
+  if (!entry.evidenceNo) entry.evidenceNo = makeEvidenceNo(entry.category, editingId);
+  const totalSize = Object.values(entry.attachments).flat().reduce((sum, file) => sum + Number(file.size || 0), 0);
+  if (totalSize > MAX_ATTACHMENT_TOTAL_SIZE) { alert("첨부 전체 용량은 20MB 이내여야 합니다."); return; }
+  const button = els.submitExpenseButton;
+  button.disabled = true;
+  try {
+    if (hasSupabaseConfig && !isRemoteMode) throw new Error("로그인 후 지출을 저장하세요.");
+    if (isRemoteMode) {
+      const result = await saveRemoteExpense(authState.profile, entry, editingId);
+      try { await loadRemoteState(); }
+      catch { resetExpenseForm(); alert("서버 저장은 완료되었으나 목록 새로고침에 실패했습니다. 페이지를 새로고침하세요."); return; }
+      if (result.warnings.length) alert(result.warnings.join("\n"));
+    } else if (editingId) {
+      const index = state.entries.findIndex(item => item.id === editingId);
+      state.entries[index] = entry;
+    } else state.entries.push(entry);
+  } catch (error) {
+    alert(`지출 저장에 실패했습니다. ${error.message || "다시 시도하세요."}`);
+    return;
+  } finally { button.disabled = false; }
 
   if (!state.project.school && entry.school) state.project.school = entry.school;
   if (!state.project.clubName && entry.clubName) state.project.clubName = entry.clubName;
@@ -2566,11 +2590,14 @@ window.editEntry = function editEntry(id) {
 
   Object.entries(entry).forEach(([key, value]) => {
     const field = els.expenseForm.elements[key];
-    if (field && key !== "attachments") {
+    if (field && key !== "attachments" && key !== "meeting") {
       field.value = value ?? "";
     }
   });
 
+  for (const [key, value] of Object.entries({ ...emptyMeeting(), ...entry.meeting })) {
+    els.expenseForm.elements[`meeting${key[0].toUpperCase()}${key.slice(1)}`].value = value;
+  }
   draftAttachments = structuredClone(entry.attachments || emptyAttachments());
   els.submitExpenseButton.textContent = "수정 저장";
   syncDirectTypeField();
@@ -2691,7 +2718,7 @@ function renderEvidenceFile(file, label) {
   const media = hasData && file.type?.startsWith("image/")
     ? `<img src="${file.dataUrl}" alt="">`
     : hasData && file.type === "application/pdf"
-      ? `<iframe src="${file.dataUrl}" title="${name}"></iframe>`
+      ? `<a class="small-button" href="${escapeHtml(file.dataUrl)}" target="_blank" rel="noopener">PDF 원본 보기</a>`
       : `<div class="file-placeholder">미리보기 데이터 없음</div>`;
   const download = hasData
     ? `<a class="small-button evidence-download" href="${file.dataUrl}" download="${name}">다운로드</a>`
@@ -2773,7 +2800,7 @@ function getEntryWarnings(entry) {
   }
 
   if (entry.category === "meeting") {
-    if (!hasAttachment(entry, "meetingMinutes")) warnings.push("업무협의회비는 협의록 첨부가 필요합니다.");
+    if (!hasAttachment(entry, "meetingMinutes") && validateMeeting(entry).length) warnings.push("업무협의회비는 협의록 첨부 또는 협의회 기록 입력이 필요합니다.");
     if (!hasAttachment(entry, "photo")) warnings.push("업무협의회비는 사진 첨부를 확인하세요.");
   }
 
@@ -2928,4 +2955,27 @@ function escapeJsArg(value) {
     .replaceAll(">", "&gt;")
     .replaceAll("\n", "\\n")
     .replaceAll("\r", "");
+}
+
+async function exportHwpx() {
+  const button = document.querySelector("#hwpxExportButton");
+  const status = document.querySelector("#hwpxExportStatus");
+  button.disabled = true;
+  try {
+    if (isRemoteMode) await loadRemoteState();
+    await refreshEvidenceUrls(isRemoteMode ? state.entries : []);
+    status.textContent = "HWPX를 준비하고 있습니다…";
+    const { buildSettlementHwpx } = await import("./hwpxExport.js");
+    const bytes = await buildSettlementHwpx(state, text => { status.textContent = text; });
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/hwp+zip" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `정산서_${state.project.school || "학교"}_${state.project.clubName || "동아리"}.hwpx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    status.textContent = "HWPX 다운로드 완료";
+  } catch (error) {
+    status.textContent = "HWPX 출력 실패";
+    alert(`HWPX를 만들지 못했습니다. ${error.message || "첨부 원본을 확인하세요."}`);
+  } finally { button.disabled = false; }
 }
