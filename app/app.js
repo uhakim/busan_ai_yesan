@@ -435,6 +435,7 @@ function bindEvents() {
   els.expenseForm.addEventListener("submit", handleExpenseSubmit);
   els.expenseForm.elements.category.addEventListener("change", syncDirectTypeField);
   document.querySelector("#hwpxExportButton").addEventListener("click", exportHwpx);
+  document.querySelector("#pptxExportButton").addEventListener("click", exportPptx);
   els.memberSubmitForm.addEventListener("submit", handleMemberSubmit);
   els.memberSubmitForm.elements.submitter.addEventListener("input", renderMemberBudgetHint);
   els.memberSubmitForm.elements.amount.addEventListener("input", renderMemberBudgetHint);
@@ -2978,4 +2979,22 @@ async function exportHwpx() {
     status.textContent = "HWPX 출력 실패";
     alert(`HWPX를 만들지 못했습니다. ${error.message || "첨부 원본을 확인하세요."}`);
   } finally { button.disabled = false; }
+}
+
+async function exportPptx() {
+  const button = document.querySelector("#pptxExportButton"), status = document.querySelector("#pptxExportStatus");
+  button.disabled = true;
+  try {
+    if (isRemoteMode) await loadRemoteState();
+    await refreshEvidenceUrls(isRemoteMode ? state.entries : []);
+    status.textContent = "원본 양식 PPTX를 준비하고 있습니다…";
+    const {buildSettlementPptx} = await import("./pptxExport.js");
+    const bytes = await buildSettlementPptx(state, text => {status.textContent = text;});
+    const url = URL.createObjectURL(new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.presentationml.presentation"}));
+    const link = document.createElement("a"); link.href = url;
+    link.download = `정산서_${state.project.school || "학교"}_${state.project.clubName || "동아리"}.pptx`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000); status.textContent = "PPTX 다운로드 완료";
+  } catch(error) {
+    status.textContent = "PPTX 출력 실패"; alert(`PPTX를 만들지 못했습니다. ${error.message || "첨부 원본을 확인하세요."}`);
+  } finally {button.disabled = false;}
 }

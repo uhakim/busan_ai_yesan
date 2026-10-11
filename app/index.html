@@ -608,10 +608,12 @@
 
       <section class="tab-panel print-tab" id="printPanel">
         <section class="print-toolbar">
-          <p>정산서·지출 내역·협의록·증빙을 HWPX로 내려받을 수 있습니다. 기존 인쇄/PDF와 PPTX 붙여넣기도 사용할 수 있습니다.</p>
+          <p>원본 양식의 PPTX 또는 HWPX로 정산서와 증빙을 내려받을 수 있습니다. PPTX의 표는 편집 가능하며 협의록·PDF 증빙은 이미지로 들어갑니다.</p>
           <button type="button" class="ghost-button" id="copyPptxButton">PPTX 붙여넣기용 복사</button>
           <button type="button" class="primary-button" id="hwpxExportButton">정산서 HWPX 다운로드</button>
           <span id="hwpxExportStatus" role="status"></span>
+          <button type="button" class="primary-button" id="pptxExportButton">원본 양식 PPTX 다운로드</button>
+          <span id="pptxExportStatus" role="status"></span>
           <button type="button" class="ghost-button" id="printButtonSecondary">인쇄/PDF</button>
         </section>
         <section class="work-section pptx-copy-section">
