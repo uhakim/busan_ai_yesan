@@ -26,7 +26,7 @@ const state = {
     totalBudget: 2000000,
     interest: 100,
   },
-  entries: Array.from({ length: 4 }, (_, i) => ({
+  entries: Array.from({ length: 12 }, (_, i) => ({
     category: "direct",
     date: "2026-10-07",
     description: `ChatGPT ${i + 1}`,
@@ -35,7 +35,7 @@ const state = {
     attachments: {},
   })),
 };
-test("PPTX retains original dimensions, masters, table geometry and merges; overflow includes all rows and totals", async () => {
+test("PPTX retains original dimensions, masters, table geometry and merges; additional rows extend one category table and preserve its total", async () => {
   const files = unzipSync(
     await buildSettlementPptx(state, () => {}, { templateBytes }),
   );
@@ -44,7 +44,7 @@ test("PPTX retains original dimensions, masters, table geometry and merges; over
     original["ppt/slideMasters/slideMaster1.xml"],
   );
   const pres = parse(files["ppt/presentation.xml"]);
-  assert.equal(pres.getElementsByTagNameNS(P, "sldId").length, 7);
+  assert.equal(pres.getElementsByTagNameNS(P, "sldId").length, 6);
   assert.equal(
     pres.getElementsByTagNameNS(P, "sldSz")[0].getAttribute("cx"),
     "6858000",
@@ -53,10 +53,18 @@ test("PPTX retains original dimensions, masters, table geometry and merges; over
     .filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p))
     .map((p) => texts(parse(files[p])))
     .join("\n");
-  for (const v of ["ChatGPT 1", "ChatGPT 4", "40,000", "1,960,000", "동성초"])
+  for (const v of ["ChatGPT 1", "ChatGPT 12", "120,000", "1,880,000", "동성초"])
     assert(xml.includes(v), v);
   for (const v of ["세부 내역 기입", "파란색 글씨", "사용 금액 기입"])
     assert(!xml.includes(v), v);
+  const detail = parse(files["ppt/slides/slide5.xml"]);
+  const detailTable = detail.getElementsByTagNameNS(A, "tbl")[0];
+  const detailRows = Array.from(detailTable.getElementsByTagNameNS(A, "tr"));
+  assert.equal(detailRows.length, 14); // header + 12 expenses + total
+  for (let i = 1; i <= 12; i++) assert(texts(detailRows[i]).includes(`ChatGPT ${i}`));
+  assert.equal(texts(detailRows[13]), "합계|120,000");
+  assert.equal(detailRows[13].getElementsByTagNameNS(A, "tc")[0].getAttribute("gridSpan"), "4");
+  assert(!xml.includes("소계"));
   const table = parse(files["ppt/slides/slide1.xml"]).getElementsByTagNameNS(
     A,
     "tbl",

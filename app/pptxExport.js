@@ -205,17 +205,22 @@ export async function buildSettlementPptx(
   }
   for (const [ci, [cat, label]] of Object.entries(categories).entries()) {
     const cfg = configs[ci],
-      rows = entries.filter((e) => e.category === cat),
-      count = Math.max(1, Math.ceil(rows.length / 3));
-    for (let page = 0; page < count; page++) {
+      rows = entries.filter((e) => e.category === cat);
+    {
       const s = clone(cfg.page);
       cfg.guide.forEach((id) => remove(shape(s.doc, id)));
       const t = table(s.doc, cfg.table);
-      for (let r = 0; r < 3; r++) {
-        const e = rows[page * 3 + r];
+      // Extend the original editable table before its merged total row.
+      const rowCount = Math.max(3, rows.length);
+      const templateRow = els(t, A, "tr")[1];
+      const totalRow = els(t, A, "tr")[4];
+      for (let r = 3; r < rowCount; r++)
+        t.insertBefore(templateRow.cloneNode(true), totalRow);
+      for (let r = 0; r < rowCount; r++) {
+        const e = rows[r];
         const values = e
           ? [
-              page * 3 + r + 1,
+              r + 1,
               label,
               e.date || "",
               e.description || "",
@@ -224,27 +229,13 @@ export async function buildSettlementPptx(
           : ["", "", "", "", ""];
         values.forEach((v, c) => put(t, r + 1, c, v, c === 3 ? 1000 : 1100));
       }
-      if (count > 1)
-        put(
-          t,
-          4,
-          0,
-          page === count - 1 ? "합계(항목 전체)" : "소계(이 페이지)",
-          1100,
-        );
-      put(
-        t,
-        4,
-        4,
-        money(
-          sum(page === count - 1 ? rows : rows.slice(page * 3, page * 3 + 3)),
-        ),
-      );
+      put(t, rowCount + 1, 0, "합계", 1100);
+      put(t, rowCount + 1, 4, money(sum(rows)));
       // Allow long descriptions to grow their row and move the evidence heading below it.
       const widths = els(t, A, "gridCol").map(
         (n) => Number(n.getAttribute("w")) / 12700 - 14,
       );
-      for (let r = 1; r <= 3; r++) {
+      for (let r = 1; r <= rowCount; r++) {
         const tr = els(t, A, "tr")[r];
         let height = Number(tr.getAttribute("h"));
         kids(tr)
@@ -277,7 +268,7 @@ export async function buildSettlementPptx(
         );
       if (Number(off.getAttribute("y")) + tableHeight > 8200000)
         throw Error(
-          "지출 세부내역이 한 페이지를 초과합니다. 설명을 줄여 주세요.",
+          "지출 세부내역 표가 한 페이지를 초과합니다. 항목 수 또는 설명 길이를 확인하세요.",
         );
       ext.setAttribute("cy", String(tableHeight));
       const headingY = Math.max(
