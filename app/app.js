@@ -692,6 +692,7 @@ async function initializeAuth() {
       await loadRemoteState();
     }
     onAuthStateChange(async (nextAuthState) => {
+      if (!nextAuthState.session || authState.user?.id !== nextAuthState.user?.id) clearPptxDownload();
       authState = nextAuthState;
       isRemoteMode = Boolean(authState.session);
       if (authState.profile) {
@@ -718,6 +719,7 @@ async function loadRemoteState() {
 
 async function handleLogin(event) {
   event.preventDefault();
+  clearPptxDownload();
   els.authMessage.textContent = "";
   const data = new FormData(event.currentTarget);
 
@@ -2981,19 +2983,32 @@ async function exportHwpx() {
   } finally { button.disabled = false; }
 }
 
+let pptxDownloadUrl = null;
+function clearPptxDownload() {
+  if (pptxDownloadUrl) URL.revokeObjectURL(pptxDownloadUrl);
+  pptxDownloadUrl = null;
+  const link = document.querySelector("#pptxDownloadLink");
+  if (link) { link.hidden = true; link.removeAttribute("href"); }
+  const status = document.querySelector("#pptxExportStatus");
+  if (status) status.textContent = "";
+}
 async function exportPptx() {
   const button = document.querySelector("#pptxExportButton"), status = document.querySelector("#pptxExportStatus");
+  const account = authState.user?.id || "local";
   button.disabled = true;
+  clearPptxDownload();
+  status.textContent = "최신 기록을 불러오고 있습니다…";
   try {
     if (isRemoteMode) await loadRemoteState();
     await refreshEvidenceUrls(isRemoteMode ? state.entries : []);
     status.textContent = "원본 양식 PPTX를 준비하고 있습니다…";
     const {buildSettlementPptx} = await import("./pptxExport.js");
     const bytes = await buildSettlementPptx(state, text => {status.textContent = text;});
-    const url = URL.createObjectURL(new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.presentationml.presentation"}));
-    const link = document.createElement("a"); link.href = url;
-    link.download = `정산서_${state.project.school || "학교"}_${state.project.clubName || "동아리"}.pptx`; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000); status.textContent = "PPTX 다운로드 완료";
+    if (account !== (authState.user?.id || "local")) throw Error("로그인 계정이 변경되었습니다. 현재 계정에서 다시 출력하세요.");
+    pptxDownloadUrl = URL.createObjectURL(new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.presentationml.presentation"}));
+    const link = document.querySelector("#pptxDownloadLink"); link.href = pptxDownloadUrl;
+    link.download = `정산서_${state.project.school || "학교"}_${state.project.clubName || "동아리"}.pptx`; link.hidden = false; link.click();
+    status.textContent = "PPTX 준비 완료 · 자동 다운로드가 시작되지 않으면 파일 저장을 누르세요.";
   } catch(error) {
     status.textContent = "PPTX 출력 실패"; alert(`PPTX를 만들지 못했습니다. ${error.message || "첨부 원본을 확인하세요."}`);
   } finally {button.disabled = false;}
