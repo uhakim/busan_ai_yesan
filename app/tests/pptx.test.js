@@ -7,7 +7,7 @@ import { buildSettlementPptx } from "../pptxExport.js";
 Object.assign(globalThis, { DOMParser, XMLSerializer });
 const templateBytes = new Uint8Array(
   await fs.readFile(
-    new URL("../../references/정산서_이름_학교_동아리명.pptx", import.meta.url),
+    new URL("../../references/정산서_직접성경비15칸_양식.pptx", import.meta.url),
   ),
 );
 const original = unzipSync(templateBytes),
@@ -60,10 +60,10 @@ test("PPTX retains original dimensions, masters, table geometry and merges; addi
   const detail = parse(files["ppt/slides/slide5.xml"]);
   const detailTable = detail.getElementsByTagNameNS(A, "tbl")[0];
   const detailRows = Array.from(detailTable.getElementsByTagNameNS(A, "tr"));
-  assert.equal(detailRows.length, 14); // header + 12 expenses + total
+  assert.equal(detailRows.length, 17); // header + 15 template slots + total
   for (let i = 1; i <= 12; i++) assert(texts(detailRows[i]).includes(`ChatGPT ${i}`));
-  assert.equal(texts(detailRows[13]), "합계|120,000");
-  assert.equal(detailRows[13].getElementsByTagNameNS(A, "tc")[0].getAttribute("gridSpan"), "4");
+  assert.equal(texts(detailRows[16]), "합계|120,000");
+  assert.equal(detailRows[16].getElementsByTagNameNS(A, "tc")[0].getAttribute("gridSpan"), "4");
   assert(!xml.includes("소계"));
   const table = parse(files["ppt/slides/slide1.xml"]).getElementsByTagNameNS(
     A,

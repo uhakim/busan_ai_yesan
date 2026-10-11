@@ -211,10 +211,12 @@ export async function buildSettlementPptx(
       cfg.guide.forEach((id) => remove(shape(s.doc, id)));
       const t = table(s.doc, cfg.table);
       // Extend the original editable table before its merged total row.
-      const rowCount = Math.max(3, rows.length);
+      const existingRows = els(t, A, "tr");
+      const templateRowCount = existingRows.length - 2;
+      const rowCount = Math.max(templateRowCount, rows.length);
       const templateRow = els(t, A, "tr")[1];
-      const totalRow = els(t, A, "tr")[4];
-      for (let r = 3; r < rowCount; r++)
+      const totalRow = existingRows.at(-1);
+      for (let r = templateRowCount; r < rowCount; r++)
         t.insertBefore(templateRow.cloneNode(true), totalRow);
       for (let r = 0; r < rowCount; r++) {
         const e = rows[r];
